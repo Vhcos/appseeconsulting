@@ -1,0 +1,11 @@
+{
+  "nav": { "home": "Home", "wizard": "Intake", "report": "Final report", "tracking": "Tracking" },
+  "home": {
+    "title": "seeconsulting.cl",
+    "subtitle": "First we collect inputs (Wizard). Then we generate the final report (PDF). After that, we track KPIs weekly/monthly with alerts."
+  },
+  "wizard": {
+    "title": "Intake",
+    "lead": "This is where we collect the information that supports everything else. Without it, the report and KPIs won’t hold."
+  }
+}

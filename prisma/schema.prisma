@@ -1,0 +1,626 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role { OWNER ADMIN MEMBER }
+enum EngagementStatus { DRAFT ACTIVE PAUSED CLOSED }
+enum RecipientType { EMAIL WHATSAPP }
+
+enum BscPerspective { FINANCIAL CUSTOMER INTERNAL_PROCESS LEARNING_GROWTH }
+enum KpiFrequency { WEEKLY MONTHLY QUARTERLY YEARLY ADHOC }
+enum KpiDirection { HIGHER_IS_BETTER LOWER_IS_BETTER }
+enum KpiDataSource { MANUAL API }
+
+enum QuestionSetKind { SURVEY INTERVIEW WORKSHOP }
+enum QuestionType { TEXT LONG_TEXT NUMBER DATE SINGLE_SELECT MULTI_SELECT SCALE_1_5 }
+
+enum ReportLocale { ES EN }
+enum ReportStatus { DRAFT FINAL }
+
+enum NotificationType { KPI_REPORT_ALL KPI_REPORT_RED }
+enum NotificationStatus { PENDING SENT FAILED }
+
+enum PaymentMethod { WEBPAY TRANSFER }
+enum SubscriptionStatus { TRIAL ACTIVE PAST_DUE CANCELED }
+
+model User {
+  id              String   @id @default(cuid())
+  name            String?
+  email           String?  @unique
+  emailVerified   DateTime?
+  image           String?
+  preferredLocale String   @default("es")
+
+  memberships     Membership[]
+
+  accounts        Account[]
+  sessions        Session[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships  Membership[]
+  companies    Company[]
+  apiKeys      ApiKey[]
+  subscriptions Subscription[]
+}
+
+model Membership {
+  id        String  @id @default(cuid())
+  role      Role    @default(MEMBER)
+
+  userId    String
+  orgId     String
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  country   String?
+  industry  String?
+  timezone  String   @default("America/Santiago")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  engagements Engagement[]
+
+  @@index([orgId])
+}
+
+model Engagement {
+  id        String   @id @default(cuid())
+  orgId     String
+  companyId String
+
+  name      String
+  status    EngagementStatus @default(DRAFT)
+
+  startDate DateTime?
+  endDate   DateTime?
+
+  localeDefault String @default("es")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  company  Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  recipients      EngagementRecipient[]
+  questionSets    QuestionSet[]
+  answers         Answer[]
+
+  kpis            Kpi[]
+  initiatives     Initiative[]
+  risks           Risk[]
+  decisions       Decision[]
+  roadmapWeeks    RoadmapWeek[]
+  actionItems     ActionItem[]
+  raciRows        RaciRow[]
+  unitEconomics   UnitEconomicsRow[]
+  accountPlans    AccountPlanRow[]
+
+  reportVersions  ReportVersion[]
+  notifications   NotificationEvent[]
+  activationKeys  ActivationKey[]
+
+  wizardProgress  WizardProgress[]
+
+  @@index([orgId])
+  @@index([companyId])
+}
+
+model EngagementRecipient {
+  id           String @id @default(cuid())
+  engagementId String
+
+  type         RecipientType
+  label        String?
+  value        String
+  isActive     Boolean @default(true)
+
+  createdAt    DateTime @default(now())
+
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+  @@unique([engagementId, type, value])
+}
+
+model WizardProgress {
+  id           String   @id @default(cuid())
+  engagementId String
+  stepKey      String
+  completedAt  DateTime?
+  notes        String?
+
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@unique([engagementId, stepKey])
+  @@index([engagementId])
+}
+
+model QuestionSet {
+  id            String @id @default(cuid())
+  engagementId  String
+
+  kind          QuestionSetKind
+  order         Int
+
+  titleEs       String
+  titleEn       String
+  descriptionEs String?
+  descriptionEn String?
+
+  isActive      Boolean @default(true)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  questions     Question[]
+
+  @@index([engagementId])
+}
+
+model Question {
+  id            String @id @default(cuid())
+  questionSetId String
+
+  key           String
+  order         Int
+
+  promptEs      String
+  promptEn      String
+
+  helpEs        String?
+  helpEn        String?
+
+  type          QuestionType
+  required      Boolean @default(false)
+
+  optionsJson   Json?
+
+  questionSet   QuestionSet @relation(fields: [questionSetId], references: [id], onDelete: Cascade)
+  answers       Answer[]
+
+  @@unique([questionSetId, key])
+  @@index([questionSetId])
+}
+
+model Answer {
+  id              String @id @default(cuid())
+  engagementId    String
+  questionId      String
+  respondentUserId String?
+
+  valueJson       Json
+  note            String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  engagement      Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  question        Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  respondent      User?      @relation(fields: [respondentUserId], references: [id], onDelete: SetNull)
+
+  evidences       Evidence[]
+
+  @@index([engagementId])
+  @@index([questionId])
+}
+
+model Evidence {
+  id           String @id @default(cuid())
+  label        String?
+  url          String
+  createdAt    DateTime @default(now())
+
+  answerId     String?
+  decisionId   String?
+  kpiValueId   String?
+  initiativeId String?
+
+  answer       Answer?     @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  decision     Decision?   @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  kpiValue     KpiValue?   @relation(fields: [kpiValueId], references: [id], onDelete: Cascade)
+  initiative   Initiative? @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+
+  @@index([answerId])
+  @@index([decisionId])
+  @@index([kpiValueId])
+  @@index([initiativeId])
+}
+
+model KpiCanonical {
+  id                 String @id @default(cuid())
+  key                String @unique
+
+  defaultPerspective BscPerspective
+  defaultFrequency   KpiFrequency
+  defaultDirection   KpiDirection
+
+  unit               String?
+  formula            String?
+
+  nameEs             String
+  nameEn             String
+  descriptionEs      String?
+  descriptionEn      String?
+
+  tagsJson           Json?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  kpis               Kpi[]
+}
+
+model Kpi {
+  id            String @id @default(cuid())
+  engagementId  String
+  canonicalId   String?
+
+  nameEs        String
+  nameEn        String
+  descriptionEs String?
+  descriptionEn String?
+
+  perspective   BscPerspective
+  frequency     KpiFrequency
+  direction     KpiDirection
+  dataSource    KpiDataSource @default(MANUAL)
+
+  unit          String?
+  formula       String?
+
+  targetValue   Decimal?
+  targetText    String?
+
+  dueOffsetDays Int @default(0)
+  ownerUserId   String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  engagement    Engagement    @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  canonical     KpiCanonical? @relation(fields: [canonicalId], references: [id], onDelete: SetNull)
+  owner         User?         @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  values        KpiValue[]
+
+  @@index([engagementId])
+  @@index([canonicalId])
+}
+
+model KpiValue {
+  id            String @id @default(cuid())
+  kpiId         String
+
+  periodKey     String
+  periodStart   DateTime
+  periodEnd     DateTime
+
+  value         Decimal?
+  note          String?
+  isGreen       Boolean
+
+  createdByUserId String?
+  createdAt     DateTime @default(now())
+
+  kpi           Kpi   @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  createdBy     User? @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  evidences     Evidence[]
+
+  @@unique([kpiId, periodKey])
+  @@index([kpiId])
+}
+
+model Initiative {
+  id            String @id @default(cuid())
+  engagementId  String
+
+  externalId    String?
+  title         String
+  perspective   BscPerspective
+  problem       String?
+  impact        Int?
+  effort        Int?
+  risk          Int?
+  costEst       String?
+
+  kpiId         String?
+  owner         String?
+  sponsor       String?
+
+  startDate     DateTime?
+  endDate       DateTime?
+
+  status        String?
+  definitionDone String?
+  dependencies  String?
+  notes         String?
+
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  kpi           Kpi?       @relation(fields: [kpiId], references: [id], onDelete: SetNull)
+
+  evidences     Evidence[]
+
+  @@index([engagementId])
+  @@index([kpiId])
+}
+
+model RaciRow {
+  id            String @id @default(cuid())
+  engagementId  String
+
+  initiativeName String
+  responsible    String?
+  approver       String?
+  consulted      String?
+  informed       String?
+
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model Risk {
+  id           String @id @default(cuid())
+  engagementId String
+
+  externalId   String?
+  risk         String
+  probability  Int?
+  impact       Int?
+  mitigation   String?
+  owner        String?
+  status       String?
+  reviewDate   DateTime?
+  notes        String?
+
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model Decision {
+  id              String @id @default(cuid())
+  engagementId    String
+
+  date            DateTime?
+  decision        String
+  options         String?
+  recommendation  String?
+  responsible     String?
+  status          String?
+  notes           String?
+
+  engagement      Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  evidences       Evidence[]
+
+  @@index([engagementId])
+}
+
+model RoadmapWeek {
+  id            String @id @default(cuid())
+  engagementId  String
+
+  week          String
+  objective     String?
+  keyActivities String?
+  deliverables  String?
+  kpiFocus      String?
+  ritual        String?
+
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model ActionItem {
+  id           String @id @default(cuid())
+  engagementId String
+
+  task         String
+  owner        String?
+  dueDate      DateTime?
+  status       String?
+  blocker      String?
+  comments     String?
+
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model UnitEconomicsRow {
+  id              String @id @default(cuid())
+  engagementId    String
+
+  clientSite      String?
+  modality        String?
+  m2Month         Decimal?
+  priceUsdM2      Decimal?
+  revenueUsdMonth Decimal?
+  directCosts     String?
+  margin          String?
+  marginPct       String?
+  risks           String?
+  evidence        String?
+
+  engagement      Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model AccountPlanRow {
+  id             String @id @default(cuid())
+  engagementId   String
+
+  account        String?
+  goal12m        String?
+  decisionMakers String?
+  competitors    String?
+  mainPain       String?
+  valueProp      String?
+  agenda8w       String?
+  nextStep       String?
+  status         String?
+
+  engagement     Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+model ReportVersion {
+  id           String @id @default(cuid())
+  engagementId String
+
+  version      Int
+  locale       ReportLocale
+  status       ReportStatus @default(DRAFT)
+
+  snapshotJson Json
+
+  generatedAt  DateTime @default(now())
+  lockedAt     DateTime?
+
+  pdfSha       String?
+  notes        String?
+
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@unique([engagementId, version, locale])
+  @@index([engagementId])
+}
+
+model NotificationEvent {
+  id           String @id @default(cuid())
+  engagementId String
+
+  type         NotificationType
+  status       NotificationStatus @default(PENDING)
+
+  scheduledFor DateTime
+  payload      Json
+
+  attempts     Int @default(0)
+  lastError    String?
+  sentAt       DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  engagement   Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId, scheduledFor])
+  @@index([status, scheduledFor])
+}
+
+model ApiKey {
+  id         String @id @default(cuid())
+  orgId      String
+  name       String
+  keyHash    String
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model Subscription {
+  id                String @id @default(cuid())
+  orgId             String
+  status            SubscriptionStatus @default(TRIAL)
+  paymentMethod     PaymentMethod @default(TRANSFER)
+
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model ActivationKey {
+  id            String @id @default(cuid())
+  engagementId  String
+
+  code          String @unique
+  issuedTo      String?
+  expiresAt     DateTime?
+  redeemedAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  engagement    Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+
+  @@index([engagementId])
+}
+
+/** NextAuth tables (dejamos listo aunque conectemos auth después) */
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
