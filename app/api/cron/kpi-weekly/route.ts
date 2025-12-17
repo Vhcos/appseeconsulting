@@ -7,3 +7,4 @@ export async function GET() {
   const active = await prisma.engagement.count({ where: { status: "ACTIVE" } });
   return Response.json({ ok: true, cron: "kpi-weekly", activeEngagements: active });
 }
+

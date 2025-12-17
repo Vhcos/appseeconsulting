@@ -1,17 +1,18 @@
+import type { Metadata } from "next";
 import "./globals.css";
-import { cookies } from "next/headers";
 
-export const metadata = {
-  title: "seeconsulting.cl",
-  description: "Strategic consulting wizard + report + KPI tracking"
+export const metadata: Metadata = {
+  title: "seeconsulting.cl"
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const locale = cookies().get("NEXT_LOCALE")?.value ?? "es";
+export default function RootLayout({
+  children
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );
 }
-
