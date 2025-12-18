@@ -66,7 +66,7 @@ export async function seedDemo() {
           helpEn: q.helpEn ?? null,
           type: q.type as any,
           required: q.required ?? false,
-          optionsJson: q.options ? { options: q.options } : null
+          optionsJson: q.options ? { options: q.options } : undefined
         }
       });
     }

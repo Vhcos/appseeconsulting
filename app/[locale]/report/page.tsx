@@ -11,7 +11,7 @@ export default async function ReportIndex({
   const { locale } = await params;
 
   const engagements = await prisma.engagement.findMany({
-    orderBy: { createdAt: "desc" },
+    orderBy: { id: "desc" },
     take: 20,
     include: { company: true }
   });

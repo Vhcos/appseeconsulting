@@ -39,14 +39,17 @@ export default async function ReportPage({
   for (const a of answers) answerByQuestionId.set(a.questionId, a.valueJson);
 
   const initiatives = await prisma.initiative.findMany({
-    where: { engagementId },
-    orderBy: { createdAt: "desc" }
-  });
+  where: { engagementId },
+  orderBy: { id: "asc" } // o { title: "asc" } si prefieres
+});
+
 
   const risks = await prisma.risk.findMany({
-    where: { engagementId },
-    orderBy: { createdAt: "desc" }
-  });
+  where: { engagementId },
+  orderBy: { id: "desc" } // ✅ o simplemente quita el orderBy
+});
+
+
 
   return (
     <main className="mx-auto max-w-5xl p-6">
