@@ -1,19 +1,19 @@
-import {getRequestConfig} from 'next-intl/server';
+// i18n/request.ts
+import { getRequestConfig } from "next-intl/server";
 
-const SUPPORTED = ['es', 'en'] as const;
-type Locale = (typeof SUPPORTED)[number];
+const SUPPORTED = ["es", "en"] as const;
+type SupportedLocale = (typeof SUPPORTED)[number];
 
-export default getRequestConfig(async ({requestLocale}) => {
-  const maybe = await requestLocale;
-  const locale: Locale = SUPPORTED.includes(maybe as Locale) ? (maybe as Locale) : 'es';
+function normalizeLocale(locale: string | undefined): SupportedLocale {
+  if (locale === "en") return "en";
+  return "es";
+}
 
-  const messagesByLocale: Record<Locale, any> = {
-    es: (await import('../messages/es.json')).default,
-    en: (await import('../messages/en.json')).default
-  };
+export default getRequestConfig(async ({ locale }) => {
+  const safeLocale = normalizeLocale(locale);
 
   return {
-    locale,
-    messages: messagesByLocale[locale]
+    locale: safeLocale,
+    messages: (await import(`../messages/${safeLocale}.json`)).default,
   };
 });
