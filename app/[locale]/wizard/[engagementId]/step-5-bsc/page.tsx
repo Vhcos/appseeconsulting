@@ -1,4 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 import WizardStepsNav from "@/components/see/WizardStepsNav";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
@@ -7,49 +10,20 @@ function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
-type BscRow = {
-  perspectiveEs: string;
-  perspectiveEn: string;
-  goalLabelEs: string;
-  goalLabelEn: string;
-  kpiLabelEs: string;
-  kpiLabelEn: string;
+const PERSPECTIVE_LABELS: Record<string, { es: string; en: string }> = {
+  FINANCIAL: { es: "Finanzas", en: "Finance" },
+  CUSTOMER: { es: "Clientes", en: "Customers" },
+  INTERNAL: { es: "Procesos internos", en: "Internal processes" },
+  LEARNING: { es: "Personas / aprendizaje", en: "People / learning" },
 };
 
-const BSC_ROWS: BscRow[] = [
-  {
-    perspectiveEs: "Finanzas",
-    perspectiveEn: "Finance",
-    goalLabelEs: "Objetivo financiero",
-    goalLabelEn: "Financial goal",
-    kpiLabelEs: "KPI financiero",
-    kpiLabelEn: "Financial KPI",
-  },
-  {
-    perspectiveEs: "Clientes",
-    perspectiveEn: "Customers",
-    goalLabelEs: "Objetivo de clientes",
-    goalLabelEn: "Customer goal",
-    kpiLabelEs: "KPI de clientes",
-    kpiLabelEn: "Customer KPI",
-  },
-  {
-    perspectiveEs: "Procesos internos",
-    perspectiveEn: "Internal processes",
-    goalLabelEs: "Objetivo de procesos",
-    goalLabelEn: "Process goal",
-    kpiLabelEs: "KPI de procesos",
-    kpiLabelEn: "Process KPI",
-  },
-  {
-    perspectiveEs: "Personas / aprendizaje",
-    perspectiveEn: "People / learning",
-    goalLabelEs: "Objetivo de personas",
-    goalLabelEn: "People goal",
-    kpiLabelEs: "KPI de personas",
-    kpiLabelEn: "People KPI",
-  },
-];
+function perspectiveLabel(locale: string, raw: unknown): string {
+  if (!raw) return "-";
+  const key = String(raw);
+  const labels = PERSPECTIVE_LABELS[key];
+  if (!labels) return key;
+  return locale === "en" ? labels.en : labels.es;
+}
 
 export default async function Step5BscPage({
   params,
@@ -57,6 +31,18 @@ export default async function Step5BscPage({
   params: ParamsPromise;
 }) {
   const { locale, engagementId } = await params;
+
+  const [kpiCount, initiatives] = await Promise.all([
+    prisma.kpi.count(),
+    prisma.initiative.findMany({ where: { engagementId } }),
+  ]);
+
+  const initiativesByPerspective: Record<string, any[]> = {};
+  for (const init of initiatives as any[]) {
+    const p = String(init.perspective ?? "OTHER");
+    if (!initiativesByPerspective[p]) initiativesByPerspective[p] = [];
+    initiativesByPerspective[p].push(init);
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
@@ -66,165 +52,119 @@ export default async function Step5BscPage({
         currentStep="step-5-bsc"
       />
 
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">
-            {t(locale, "Cuadro de mando (BSC)", "Balanced Scorecard (BSC)")}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {t(
-              locale,
-              "Transformamos la visión y los objetivos estratégicos en un Cuadro de Mando con KPI, metas y responsables por perspectiva.",
-              "We turn the vision and strategic goals into a Scorecard with KPIs, targets and owners by perspective."
-            )}
-          </p>
-        </div>
-
-        <Link
-          href={`/${locale}/wizard/${engagementId}/step-4-foda`}
-          className="text-xs text-indigo-600 hover:text-indigo-500"
-        >
-          ← {t(locale, "Volver a FODA", "Back to SWOT")}
-        </Link>
-      </div>
+      <header className="mb-6">
+        <h1 className="text-xl font-semibold text-slate-900">
+          {t(locale, "Cuadro de mando (BSC)", "Scorecard (BSC)")}
+        </h1>
+        <p className="mt-1 text-sm text-slate-600">
+          {t(
+            locale,
+            "Transformamos la visión y los objetivos estratégicos en un cuadro de mando con KPI, metas y responsables por perspectiva.",
+            "We transform vision and strategic goals into a scorecard with KPIs, targets and owners per perspective."
+          )}
+        </p>
+      </header>
 
       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <section className="flex items-center justify-between gap-3">
+        <section className="space-y-3">
           <p className="text-xs text-slate-600">
             {t(
               locale,
-              "Para cada perspectiva definimos 1–2 objetivos, sus KPI, metas a 12/36 meses y un responsable. Esto se conectará después con las iniciativas y el roadmap.",
-              "For each perspective we define 1–2 goals, their KPIs, 12/36-month targets and an owner. This will later connect with initiatives and the roadmap."
+              "Este cuadro se conecta con dos cosas: la librería de KPIs de la compañía y el portafolio de iniciativas de este engagement.",
+              "This scorecard connects with two things: the company's KPI library and this engagement's initiative portfolio."
             )}
           </p>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
-            {t(locale, "Taller 3 · BSC", "Workshop 3 · BSC")}
-          </span>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-600">
+                {t(locale, "KPIs definidos (total)", "Defined KPIs (total)")}
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {kpiCount}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-600">
+                {t(locale, "Iniciativas en este engagement", "Initiatives in this engagement")}
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {initiatives.length}
+              </p>
+              <Link
+                href={`/${locale}/wizard/${engagementId}/tables/initiatives`}
+                className="mt-2 inline-block text-[11px] text-indigo-600 hover:text-indigo-500"
+              >
+                {t(locale, "Ver tabla de iniciativas", "View initiatives table")}
+              </Link>
+            </div>
+          </div>
         </section>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse text-left text-xs text-slate-800">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="px-3 py-2 font-medium">
-                  {t(locale, "Perspectiva", "Perspective")}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t(locale, "Objetivo", "Goal")}
-                </th>
-                <th className="px-3 py-2 font-medium">KPI</th>
-                <th className="px-3 py-2 font-medium">
-                  {t(locale, "Meta 12 meses", "12-month target")}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t(locale, "Meta 36 meses", "36-month target")}
-                </th>
-                <th className="px-3 py-2 font-medium">
-                  {t(locale, "Responsable", "Owner")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {BSC_ROWS.map((row, idx) => (
-                <tr
-                  key={row.perspectiveEs}
-                  className={
-                    idx % 2 === 0
-                      ? "border-b border-slate-100 bg-white"
-                      : "border-b border-slate-100 bg-slate-50"
-                  }
-                >
-                  <td className="px-3 py-2 align-top text-[11px] font-medium text-slate-800">
-                    {t(locale, row.perspectiveEs, row.perspectiveEn)}
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <textarea
-                      rows={2}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 placeholder:text-slate-400"
-                      placeholder={t(
-                        locale,
-                        "Ej: Aumentar el margen EBITDA consolidado.",
-                        "e.g. Increase consolidated EBITDA margin."
-                      )}
-                      disabled
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <textarea
-                      rows={2}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 placeholder:text-slate-400"
-                      placeholder={t(
-                        locale,
-                        "Ej: Margen EBITDA %, NPS, % contratos con estándar HSEC, etc.",
-                        "e.g. EBITDA margin %, NPS, % contracts meeting HSEC standard, etc."
-                      )}
-                      disabled
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 placeholder:text-slate-400"
-                      placeholder={t(locale, "Ej: 18%", "e.g. 18%")}
-                      disabled
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 placeholder:text-slate-400"
-                      placeholder={t(locale, "Ej: 20%", "e.g. 20%")}
-                      disabled
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-900 placeholder:text-slate-400"
-                      placeholder={t(
-                        locale,
-                        "Ej: Gerente de Finanzas, Gerente de Operaciones, etc.",
-                        "e.g. Finance Manager, Operations Manager, etc."
-                      )}
-                      disabled
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <section className="space-y-2 pt-2">
+        {/* Vista por perspectiva usando iniciativas como proxy de foco */}
+        <section className="space-y-3 pt-2">
           <h2 className="text-sm font-semibold text-slate-900">
-            {t(locale, "Notas sobre alineamiento", "Alignment notes")}
+            {t(locale, "Foco por perspectiva", "Focus by perspective")}
           </h2>
-          <textarea
-            rows={3}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-            placeholder={t(
+          <p className="text-xs text-slate-600">
+            {t(
               locale,
-              "Ej: Cómo se conectan estos objetivos con el FODA, con el contrato clave y con el roadmap de 20 semanas.",
-              "e.g. How these goals connect with SWOT, the key contract and the 20-week roadmap."
+              "Aquí vemos cuántas iniciativas cuelgan de cada perspectiva del BSC. Más adelante podremos aterrizar los KPI por perspectiva.",
+              "Here we see how many initiatives hang from each BSC perspective. Later we can map the KPIs per perspective."
             )}
-            disabled
-          />
+          </p>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {Object.keys(initiativesByPerspective).length === 0 ? (
+              <p className="text-sm text-slate-500">
+                {t(
+                  locale,
+                  "Aún no hay iniciativas clasificadas por perspectiva. Puedes hacerlo en la tabla de iniciativas.",
+                  "There are no initiatives classified by perspective yet. You can do it in the initiatives table."
+                )}
+              </p>
+            ) : (
+              Object.entries(initiativesByPerspective).map(([p, list]) => (
+                <div
+                  key={p}
+                  className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+                >
+                  <p className="text-[11px] font-medium text-slate-600">
+                    {perspectiveLabel(locale, p)}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900">
+                    {list.length}{" "}
+                    {t(locale, "iniciativas", "initiatives")}
+                  </p>
+                  <ul className="mt-2 space-y-1 text-[11px] text-slate-700">
+                    {(list as any[]).slice(0, 4).map((init) => (
+                      <li key={init.id}>• {init.title ?? "-"}</li>
+                    ))}
+                    {list.length > 4 && (
+                      <li className="text-[11px] text-slate-500">
+                        +{list.length - 4} {t(locale, "más…", "more…")}
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center justify-between pt-2">
           <p className="text-xs text-slate-500">
             {t(
               locale,
-              "En el siguiente paso bajaremos este cuadro de mando a un portafolio de iniciativas priorizado.",
-              "In the next step we'll translate this scorecard into a prioritized initiative portfolio."
+              "Con el BSC armado pasamos al portafolio de iniciativas, donde ya conectamos directamente con las tablas.",
+              "With the BSC set up we move to the initiative portfolio, where we already connect directly with the tables."
             )}
           </p>
-
           <Link
             href={`/${locale}/wizard/${engagementId}/step-6-portafolio`}
             className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
           >
-            {t(locale, "Ir a Portafolio de iniciativas →", "Go to initiative portfolio →")}
+            {t(locale, "Ir a Portafolio →", "Go to Portfolio →")}
           </Link>
         </div>
       </div>

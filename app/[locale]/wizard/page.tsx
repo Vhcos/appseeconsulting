@@ -1,7 +1,6 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { EngagementStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -11,141 +10,52 @@ function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
-async function createEngagementAction(locale: string, formData: FormData) {
-  "use server";
-
-  const orgSlug = String(formData.get("orgSlug") ?? "").trim() || "seeconsulting";
-  const orgName = String(formData.get("orgName") ?? "").trim() || "SEE Consulting";
-
-  const companyName = String(formData.get("companyName") ?? "").trim();
-  const engagementName = String(formData.get("engagementName") ?? "").trim();
-
-  const localeDefault = String(formData.get("localeDefault") ?? "").trim() || "es";
-
-  if (!companyName || !engagementName) return;
-
-  const org = await prisma.organization.upsert({
-    where: { slug: orgSlug },
-    update: { name: orgName },
-    create: { slug: orgSlug, name: orgName },
-  });
-
-  // buscamos una compañía existente por nombre dentro de la org (Organization)
-  let company = await prisma.company.findFirst({
-    where: { orgId: org.id, name: companyName },
-  });
-
-  if (!company) {
-    company = await prisma.company.create({
-      data: { orgId: org.id, name: companyName },
-    });
-  }
-
-  await prisma.engagement.create({
-    data: {
-      orgId: org.id,
-      companyId: company.id,
-      name: engagementName,
-      status: EngagementStatus.DRAFT,
-      localeDefault,
-    },
-  });
-
-  revalidatePath(`/${locale}/wizard`);
-}
-
-export default async function WizardHome({ params }: { params: ParamsPromise }) {
+export default async function WizardEntryPage({
+  params,
+}: {
+  params: ParamsPromise;
+}) {
   const { locale } = await params;
 
-  const engagements = await prisma.engagement.findMany({
-    include: { company: true, org: true },
-    orderBy: [{ createdAt: "desc" }],
+  // Tomamos el engagement más reciente y vamos directo al Step-0 (Ficha del engagement)
+  const engagement = await prisma.engagement.findFirst({
+    orderBy: { createdAt: "desc" },
   });
 
+  if (engagement) {
+    redirect(`/${locale}/wizard/${engagement.id}/step-0-engagement`);
+  }
+
+  // Fallback solo si aún no hay engagements creados
   return (
-    <main style={{ padding: 24 }}>
-      <h2 style={{ marginTop: 0 }}>{t(locale, "Wizard", "Wizard")}</h2>
-      <p style={{ opacity: 0.75, marginTop: 6 }}>
+    <main className="mx-auto max-w-3xl px-6 py-10">
+      <h1 className="text-2xl font-semibold text-slate-900">
+        {t(locale, "Configura tu primer engagement", "Set up your first engagement")}
+      </h1>
+      <p className="mt-2 text-sm text-slate-600">
         {t(
           locale,
-          "Crea un engagement (cliente/proyecto) y luego entra a sus anexos/tablas.",
-          "Create an engagement (client/project) and then open its annex tables."
+          "Todavía no hay proyectos creados. Pídele a tu implementador que cargue un engagement de ejemplo o crea uno manualmente desde la base de datos.",
+          "There are no projects created yet. Ask your implementer to seed a demo engagement or create one manually from the database.",
         )}
       </p>
 
-      <section style={{ marginTop: 16, padding: 16, border: "1px solid #e5e5e5", borderRadius: 12 }}>
-        <h3 style={{ marginTop: 0 }}>{t(locale, "Crear engagement", "Create engagement")}</h3>
+      <p className="mt-6 text-xs text-slate-500">
+        {t(
+          locale,
+          "Cuando exista al menos un engagement, el inicio te llevará automáticamente a la Ficha del engagement (Step-0).",
+          "Once there is at least one engagement, the home will automatically take you to the Engagement sheet (Step-0).",
+        )}
+      </p>
 
-        <form action={createEngagementAction.bind(null, locale)} style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Org slug", "Org slug")}</label>
-            <input name="orgSlug" defaultValue="seeconsulting" />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Org nombre", "Org name")}</label>
-            <input name="orgName" defaultValue="SEE Consulting" />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Compañía", "Company")}</label>
-            <input name="companyName" required placeholder={t(locale, "Ej: Cliente X", "e.g. Client X")} />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Nombre engagement", "Engagement name")}</label>
-            <input name="engagementName" required placeholder={t(locale, "Ej: Diagnóstico Q1", "e.g. Q1 Diagnostic")} />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Idioma por defecto", "Default language")}</label>
-            <select name="localeDefault" defaultValue="es">
-              <option value="es">Español</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <button type="submit">{t(locale, "Crear", "Create")}</button>
-          </div>
-        </form>
-      </section>
-
-      <section style={{ marginTop: 16 }}>
-        <h3 style={{ marginBottom: 10 }}>{t(locale, "Engagements", "Engagements")}</h3>
-
-        <div style={{ display: "grid", gap: 10 }}>
-          {engagements.map((e) => (
-            <div
-              key={e.id}
-              style={{
-                border: "1px solid #e5e5e5",
-                borderRadius: 12,
-                padding: 12,
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "baseline",
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700 }}>{e.name}</div>
-                <div style={{ opacity: 0.75, marginTop: 4, fontSize: 13 }}>
-                  {e.org.name} · {e.company.name} · {e.status}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <Link href={`/${locale}/wizard/${e.id}`}>{t(locale, "Abrir", "Open")}</Link>
-              </div>
-            </div>
-          ))}
-
-          {engagements.length === 0 && (
-            <div style={{ opacity: 0.7 }}>{t(locale, "Aún no hay engagements.", "No engagements yet.")}</div>
-          )}
-        </div>
-      </section>
+      <div className="mt-8">
+        <Link
+          href={`/${locale}`}
+          className="text-xs font-medium text-indigo-600 hover:underline"
+        >
+          {t(locale, "Volver al inicio", "Back to home")}
+        </Link>
+      </div>
     </main>
   );
 }

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_QUESTION_SETS } from "@/lib/seed/defaultQuestionSets";
 

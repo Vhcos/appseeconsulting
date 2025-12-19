@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 import WizardStepsNav from "@/components/see/WizardStepsNav";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
@@ -14,6 +15,11 @@ export default async function Step3EstrategiaPage({
 }) {
   const { locale, engagementId } = await params;
 
+  const [kpiCount, initiativeCount] = await Promise.all([
+    prisma.kpi.count(), // kpi suele ser a nivel compañía
+    prisma.initiative.count({ where: { engagementId } }),
+  ]);
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
       <WizardStepsNav
@@ -22,156 +28,114 @@ export default async function Step3EstrategiaPage({
         currentStep="step-3-estrategia"
       />
 
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">
-            {t(
-              locale,
-              "Visión, misión y objetivos estratégicos",
-              "Vision, mission and strategic goals"
-            )}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {t(
-              locale,
-              "En este paso definimos la estrella polar del negocio a 3 años y los objetivos que guiarán el BSC y el portafolio de iniciativas.",
-              "In this step we define the 3-year north star and the goals that will drive the BSC and initiative portfolio."
-            )}
-          </p>
-        </div>
-
-        <Link
-          href={`/${locale}/wizard/${engagementId}/step-2-diagnostico`}
-          className="text-xs text-indigo-600 hover:text-indigo-500"
-        >
-          ← {t(locale, "Volver al diagnóstico 360°", "Back to 360° diagnosis")}
-        </Link>
-      </div>
+      <header className="mb-6">
+        <h1 className="text-xl font-semibold text-slate-900">
+          {t(locale, "Visión, misión y objetivos", "Vision, mission and goals")}
+        </h1>
+        <p className="mt-1 text-sm text-slate-600">
+          {t(
+            locale,
+            "A partir del diagnóstico definimos hacia dónde quiere ir la organización y cuáles son sus objetivos estratégicos.",
+            "From the diagnosis we define where the organization wants to go and what its strategic goals are."
+          )}
+        </p>
+      </header>
 
       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        {/* Visión */}
-        <section className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Visión a 3 años", "3-year vision")}
-            </h2>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
-              {t(locale, "Taller 1 · Anexo D", "Workshop 1 · Annex D")}
-            </span>
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {t(locale, "Visión", "Vision")}
+            </p>
+            <textarea
+              rows={4}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              placeholder={t(
+                locale,
+                "Ej: Ser el socio preferido en soluciones sustentables para la gran minería.",
+                "e.g. Become the preferred partner in sustainable solutions for large mining."
+              )}
+              disabled
+            />
           </div>
-          <textarea
-            rows={4}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-            placeholder={t(
-              locale,
-              "Ej: Ser el partner estratégico preferido de la minera X en soluciones de datos y operación, duplicando el tamaño del negocio manteniendo estándares HSEC de clase mundial.",
-              "e.g. Become the preferred strategic partner of mining company X in data and operations, doubling business size while keeping world-class HSEC standards."
-            )}
-            disabled
-          />
-          <p className="text-[11px] text-slate-500">
-            {t(
-              locale,
-              "Texto corto, aspiracional pero aterrizado, que se pueda leer en menos de 20 segundos.",
-              "Short, aspirational but grounded text that can be read in under 20 seconds."
-            )}
-          </p>
-        </section>
-
-        {/* Misión */}
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-slate-900">
-            {t(locale, "Misión", "Mission")}
-          </h2>
-          <textarea
-            rows={3}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-            placeholder={t(
-              locale,
-              "Ej: Diseñamos y operamos soluciones que combinan datos, tecnología y personas para que la minería sea más segura, eficiente y sustentable.",
-              "e.g. We design and operate solutions that combine data, technology and people to make mining safer, more efficient and more sustainable."
-            )}
-            disabled
-          />
-          <p className="text-[11px] text-slate-500">
-            {t(
-              locale,
-              "Debe explicar qué hacemos, para quién y cómo, sin jerga innecesaria.",
-              "Should explain what we do, for whom and how, without unnecessary jargon."
-            )}
-          </p>
-        </section>
-
-        {/* Objetivos */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              {t(locale, "Misión", "Mission")}
+            </p>
+            <textarea
+              rows={4}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              placeholder={t(
+                locale,
+                "Ej: Diseñar e implementar soluciones que mejoren la seguridad, productividad y sustentabilidad de nuestros clientes.",
+                "e.g. Design and implement solutions that improve safety, productivity and sustainability for our clients."
+              )}
+              disabled
+            />
+          </div>
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
               {t(locale, "Objetivos estratégicos", "Strategic goals")}
-            </h2>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
-              {t(locale, "Se conectan con el BSC", "They connect to the BSC")}
-            </span>
+            </p>
+            <textarea
+              rows={4}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              placeholder={t(
+                locale,
+                "Ej: 1) Crecer EBITDA 20% en 3 años. 2) Diversificar cartera de clientes. 3) Reducir incidentes HSEC críticos a 0.",
+                "e.g. 1) Grow EBITDA 20% in 3 years. 2) Diversify customer base. 3) Reduce critical HSEC incidents to 0."
+              )}
+              disabled
+            />
           </div>
+        </section>
+
+        <section className="space-y-3 pt-2">
+          <h2 className="text-sm font-semibold text-slate-900">
+            {t(locale, "Conexión con KPIs e iniciativas", "Connection with KPIs and initiatives")}
+          </h2>
           <p className="text-xs text-slate-600">
             {t(
               locale,
-              "Normalmente definimos entre 3 y 5 objetivos para los próximos 36 meses. Luego, cada objetivo tendrá 1–3 KPI en el cuadro de mando.",
-              "We usually define between 3 and 5 goals for the next 36 months. Each goal will later have 1–3 KPIs in the scorecard."
+              "Los objetivos se traducen en indicadores (KPIs) y en iniciativas concretas. Aquí mostramos un resumen de cuántos tenemos configurados.",
+              "Goals are translated into indicators (KPIs) and concrete initiatives. Here we show a summary of how many we have configured."
             )}
           </p>
 
           <div className="grid gap-3 md:grid-cols-2">
-            {["1", "2", "3", "4"].map((n, idx) => (
-              <div key={n} className="space-y-2">
-                <label className="block text-xs font-medium text-slate-700">
-                  {idx < 3
-                    ? t(locale, `Objetivo ${n}`, `Goal ${n}`)
-                    : t(locale, "Objetivo 4 (opcional)", "Goal 4 (optional)")}
-                </label>
-                <textarea
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                  placeholder={
-                    idx === 0
-                      ? t(
-                          locale,
-                          "Ej: Aumentar el margen EBITDA consolidado al 18–20%.",
-                          "e.g. Increase consolidated EBITDA margin to 18–20%."
-                        )
-                      : idx === 1
-                      ? t(
-                          locale,
-                          "Ej: Mejorar la satisfacción del cliente clave a un NPS ≥ 60.",
-                          "e.g. Improve key client's satisfaction to NPS ≥ 60."
-                        )
-                      : idx === 2
-                      ? t(
-                          locale,
-                          "Ej: Reducir la exposición a riesgos HSEC críticos en un 50%.",
-                          "e.g. Reduce exposure to critical HSEC risks by 50%."
-                        )
-                      : t(
-                          locale,
-                          "Ej: Desarrollar al menos 2 nuevas líneas de servicio relevantes para la minera.",
-                          "e.g. Develop at least 2 new service lines relevant for the mining client."
-                        )
-                  }
-                  disabled
-                />
-              </div>
-            ))}
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-600">
+                {t(locale, "KPIs definidos (a nivel compañía)", "Defined KPIs (company level)")}
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {kpiCount}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <p className="text-[11px] font-medium text-slate-600">
+                {t(locale, "Iniciativas asociadas al engagement", "Initiatives for this engagement")}
+              </p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">
+                {initiativeCount}
+              </p>
+              <Link
+                href={`/${locale}/wizard/${engagementId}/tables/initiatives`}
+                className="mt-2 inline-block text-[11px] text-indigo-600 hover:text-indigo-500"
+              >
+                {t(locale, "Ver iniciativas", "View initiatives")}
+              </Link>
+            </div>
           </div>
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center justify-between pt-2">
           <p className="text-xs text-slate-500">
             {t(
               locale,
-              "En el siguiente paso transformaremos estos objetivos en un Cuadro de Mando (BSC) con KPI, metas y dueños.",
-              "In the next step we'll turn these goals into a Balanced Scorecard (BSC) with KPIs, targets and owners."
+              "Con la visión y objetivos claros pasamos a mapear fortalezas, oportunidades, debilidades y amenazas.",
+              "With vision and goals clear we move on to map strengths, opportunities, weaknesses and threats."
             )}
           </p>
-
           <Link
             href={`/${locale}/wizard/${engagementId}/step-4-foda`}
             className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"

@@ -171,11 +171,24 @@ model Engagement {
   orgId     String
   companyId String
 
+  dataRoomItems DataRoomItem[]
+  dataRoomFiles DataRoomFile[]
+
   name   String
   status EngagementStatus @default(DRAFT)
 
   startDate DateTime?
   endDate   DateTime?
+
+  // Campos de la ficha del cliente (Step-0)
+  // 👇 NUEVOS CAMPOS PARA LA FICHA DEL CLIENTE
+  displayName        String? // nombre corto para mostrar en el dashboard / informe
+  contextCompanyName String? // nombre como quiere verse en el informe
+  contextIndustry    String? // rubro / industria
+  contextGoal12m     String? // meta a 12 meses
+  contextGoal36m     String? // meta a 36 meses
+  contextSponsor     String? // sponsor principal
+  contextCoreTeam    String? // equipo clave del proceso
 
   localeDefault String @default("es")
 
@@ -701,4 +714,59 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+enum ProgressStatus {
+  NOT_STARTED // No iniciado
+  OFF_TRACK // Desviado
+  IN_PROGRESS // Progresando
+  ON_TRACK // Según lo planificado
+}
+
+enum DataRoomArea {
+  GOVERNANCE // Gobierno y organización
+  COMMERCIAL // Comercial
+  OPERATIONS // Operaciones
+  HSEC // HSEC (Health, Safety, Environment and Community)
+  DATA_TECH // Datos y tecnología
+  FINANCE // Finanzas
+}
+
+model DataRoomItem {
+  id           String         @id @default(cuid())
+  engagementId String
+  area         DataRoomArea
+  code         String // Ej: "A.2.1"
+  title        String // Ej: "Organigrama actual y descripción de roles"
+  description  String? // Texto guía / detalle
+  status       ProgressStatus @default(NOT_STARTED)
+  owner        String? // Responsable interno
+  dueDate      DateTime? // Fecha compromiso entrega
+  hasData      Boolean        @default(false)
+  notes        String?
+
+  engagement Engagement     @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  files      DataRoomFile[]
+
+  @@unique([engagementId, code])
+  @@index([engagementId])
+  @@index([area])
+}
+
+model DataRoomFile {
+  id           String  @id @default(cuid())
+  engagementId String
+  itemId       String?
+
+  filename   String
+  url        String // Ruta de almacenamiento (S3, carpeta local, etc.)
+  mimeType   String?
+  sizeBytes  Int?
+  uploadedAt DateTime @default(now())
+
+  engagement Engagement    @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  item       DataRoomItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([engagementId])
+  @@index([itemId])
 }
