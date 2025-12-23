@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import Link from "next/link";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { prisma } from "@/lib/prisma";
+import WizardStepsNav from "@/components/see/WizardStepsNav";
+import { getHelpVideo } from "@/lib/see/helpVideos";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
 
@@ -10,250 +9,209 @@ function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
-export default async function Step8GobernanzaPage({
-  params,
-}: {
-  params: ParamsPromise;
-}) {
+function fmtDate(d?: Date | null) {
+  if (!d) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export default async function StepGobernanzaPage({ params }: { params: ParamsPromise }) {
   const { locale, engagementId } = await params;
 
-  const [actionItems, raciRows] = await Promise.all([
+  const [actions, decisions, raciRows] = await Promise.all([
     prisma.actionItem.findMany({
       where: { engagementId },
+      orderBy: [{ dueDate: "asc" }, { id: "desc" }],
+      take: 8,
+    }),
+    prisma.decision.findMany({
+      where: { engagementId },
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      take: 6,
     }),
     prisma.raciRow.findMany({
       where: { engagementId },
+      orderBy: [{ initiativeName: "asc" }],
+      take: 6,
     }),
   ]);
 
+  const video = getHelpVideo(locale, "step-8-gobernanza");
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
-      <WizardStepsNav
-        locale={locale}
-        engagementId={engagementId}
-        currentStep="step-8-gobernanza"
-      />
+    <main className="mx-auto max-w-5xl px-4 py-6">
+      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-8-gobernanza" />
 
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">
-            {t(locale, "Gobernanza del plan", "Plan governance")}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {t(
-              locale,
-              "Definimos cómo se hace seguimiento al roadmap: quién se reúne, cada cuánto, qué indicadores ve y cómo se gestionan las acciones abiertas.",
-              "We define how the roadmap is monitored: who meets, how often, which indicators are reviewed and how open actions are managed."
-            )}
-          </p>
-        </div>
-
-        <Link
-          href={`/${locale}/wizard/${engagementId}/step-7-roadmap`}
-          className="text-xs text-indigo-600 hover:text-indigo-500"
-        >
-          ← {t(locale, "Volver al roadmap", "Back to roadmap")}
-        </Link>
+      <div className="mb-4">
+        <h1 className="text-xl font-semibold text-slate-900">{t(locale, "Paso 8 — Gobernanza y seguimiento", "Step 8 — Governance & follow-up")}</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          {t(
+            locale,
+            "Aquí se corre la semana: decisiones, acciones, dueños y bloqueos.",
+            "Run the week here: decisions, actions, owners and blockers."
+          )}
+        </p>
       </div>
 
-      <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        {/* Cadencia y espacios de gobernanza */}
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Cadencia y espacios de seguimiento", "Cadence and follow-up spaces")}
-            </h2>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
-              {t(locale, "Basado en Informe final", "Based on final report")}
-            </span>
-          </div>
-          <p className="text-xs text-slate-600">
-            {t(
-              locale,
-              "Normalmente se define un comité mensual de seguimiento del roadmap, con revisiones trimestrales de estrategia y un espacio específico para riesgos HSEC.",
-              "We usually define a monthly committee to follow the roadmap, quarterly strategy reviews and a specific space for HSEC risks."
-            )}
-          </p>
-          <textarea
-            rows={4}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-            placeholder={t(
-              locale,
-              "Ej: Comité mensual con Gerencia General, Operaciones, Finanzas y HSEC. Revisión de avance por iniciativa prioritaria, KPIs clave y riesgos del plan.",
-              "e.g. Monthly committee with General Management, Operations, Finance and HSEC. Review progress per priority initiative, key KPIs and plan risks."
-            )}
-            disabled
-          />
-        </section>
-
-        {/* Acciones abiertas */}
-        <section className="space-y-3 pt-2">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Acciones abiertas clave", "Key open actions")}
-            </h2>
-            <Link
-              href={`/${locale}/wizard/${engagementId}/tables/actions`}
-              className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
-            >
-              {t(locale, "Abrir tabla de acciones", "Open actions table")}
-            </Link>
-          </div>
-          {actionItems.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              {t(
-                locale,
-                "No hay acciones abiertas registradas aún. Úsalas para registrar acuerdos específicos del comité de seguimiento.",
-                "There are no open actions registered yet. Use them to log specific agreements from the follow-up committee."
-              )}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-left text-xs text-slate-800">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-3 py-2 font-medium">
-                      {t(locale, "Acción", "Action")}
-                    </th>
-                    <th className="px-3 py-2 font-medium">
-                      {t(locale, "Dueño", "Owner")}
-                    </th>
-                    <th className="px-3 py-2 font-medium">
-                      {t(locale, "Fecha compromiso", "Target date")}
-                    </th>
-                    <th className="px-3 py-2 font-medium">
-                      {t(locale, "Estado", "Status")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {actionItems.map((a, idx) => {
-                    const aa = a as any;
-                    const date = aa.dueDate as Date | null | undefined;
-                    const fmt = (d?: Date | null) =>
-                      d
-                        ? new Date(d).toLocaleDateString(
-                            locale === "en" ? "en-US" : "es-CL"
-                          )
-                        : "";
-                    return (
-                      <tr
-                        key={a.id}
-                        className={
-                          idx % 2 === 0
-                            ? "border-b border-slate-100 bg-white"
-                            : "border-b border-slate-100 bg-slate-50"
-                        }
-                      >
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-900">
-                          {aa.title ?? aa.description ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {aa.owner ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {fmt(date) || "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {aa.status ?? "-"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">
+              {t(locale, "Mira esto antes de seguir", "Watch this before continuing")}
             </div>
-          )}
-        </section>
-
-        {/* RACI */}
-        <section className="space-y-3 pt-2">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Matriz RACI resumida", "RACI matrix summary")}
-            </h2>
-            <Link
-              href={`/${locale}/wizard/${engagementId}/tables/raci`}
-              className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
-            >
-              {t(locale, "Abrir tabla RACI", "Open RACI table")}
-            </Link>
-          </div>
-          {raciRows.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              {t(
-                locale,
-                "No hay filas en la matriz RACI todavía. Úsala para clarificar quién es Responsible, Accountable, Consulted e Informed por iniciativa o flujo.",
-                "There are no rows in the RACI matrix yet. Use it to clarify who is Responsible, Accountable, Consulted and Informed per initiative or stream."
-              )}
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border-collapse text-left text-xs text-slate-800">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="px-3 py-2 font-medium">
-                      {t(locale, "Flujo / hito", "Stream / milestone")}
-                    </th>
-                    <th className="px-3 py-2 font-medium">R</th>
-                    <th className="px-3 py-2 font-medium">A</th>
-                    <th className="px-3 py-2 font-medium">C</th>
-                    <th className="px-3 py-2 font-medium">I</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {raciRows.map((row, idx) => {
-                    const r = row as any;
-                    return (
-                      <tr
-                        key={row.id}
-                        className={
-                          idx % 2 === 0
-                            ? "border-b border-slate-100 bg-white"
-                            : "border-b border-slate-100 bg-slate-50"
-                        }
-                      >
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-900">
-                          {r.workstream ?? r.deliverable ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {r.responsible ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {r.accountable ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {r.consulted ?? "-"}
-                        </td>
-                        <td className="px-3 py-2 align-top text-[11px] text-slate-700">
-                          {r.informed ?? "-"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="mt-1 text-sm text-slate-600">
+              {video.helper ?? ""}
+              {video.eta ? (
+                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                  {t(locale, "Tiempo estimado:", "Estimated time:")} {video.eta}
+                </span>
+              ) : null}
             </div>
-          )}
-        </section>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <p className="text-xs text-slate-500">
-            {t(
-              locale,
-              "Con esta gobernanza definida, estamos listos para cerrar el informe final y compartirlo con el cliente.",
-              "With this governance in place, we are ready to close the final report and share it with the client."
-            )}
-          </p>
+          </div>
 
           <Link
-            href={`/${locale}/wizard/${engagementId}/step-9-reporte`}
-            className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
+            className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+            href={`/${locale}/wizard/${engagementId}/tables`}
           >
-            {t(locale, "Ir a Informe final →", "Go to Final report →")}
+            {t(locale, "Ver todas las tablas", "All tables")}
           </Link>
         </div>
-      </div>
-    </div>
+
+        <div className="mt-3 overflow-hidden rounded-xl border border-dashed border-slate-300">
+          {video.youtubeId ? (
+            <div className="aspect-video w-full">
+              <iframe
+                className="h-full w-full"
+                src={`https://www.youtube-nocookie.com/embed/${video.youtubeId}`}
+                title={video.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <div className="p-4 text-sm text-slate-600">
+              <div className="font-medium text-slate-800">{t(locale, "Video aún no cargado.", "Video not set yet.")}</div>
+              <div className="mt-1">
+                {t(
+                  locale,
+                  "Cuando tengas el video en YouTube, agrega el youtubeId en lib/see/helpVideos.ts (step-8-gobernanza).",
+                  "When you have the video on YouTube, add the youtubeId in lib/see/helpVideos.ts (step-8-gobernanza)."
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <Link
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
+          href={`/${locale}/wizard/${engagementId}/tables/decisions?from=step-8-gobernanza`}
+        >
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "Decisiones", "Decisions")}</div>
+          <div className="mt-1 text-sm text-slate-600">
+            {t(locale, "Acuerdos clave con responsable.", "Key agreements with an owner.")}
+          </div>
+          <div className="mt-3 text-xs text-slate-500">{t(locale, "Abrir tabla →", "Open table →")}</div>
+        </Link>
+
+        <Link
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
+          href={`/${locale}/wizard/${engagementId}/tables/actions?from=step-8-gobernanza`}
+        >
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "Acciones", "Actions")}</div>
+          <div className="mt-1 text-sm text-slate-600">
+            {t(locale, "La semana real: tareas, fechas y bloqueos.", "The real week: tasks, dates and blockers.")}
+          </div>
+          <div className="mt-3 text-xs text-slate-500">{t(locale, "Abrir tabla →", "Open table →")}</div>
+        </Link>
+
+        <Link
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
+          href={`/${locale}/wizard/${engagementId}/tables/raci?from=step-8-gobernanza`}
+        >
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "RACI", "RACI")}</div>
+          <div className="mt-1 text-sm text-slate-600">
+            {t(locale, "Quién ejecuta y quién aprueba por iniciativa.", "Who executes and who approves per initiative.")}
+          </div>
+          <div className="mt-3 text-xs text-slate-500">{t(locale, "Abrir tabla →", "Open table →")}</div>
+        </Link>
+      </section>
+
+      <section className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "Últimas acciones", "Latest actions")}</div>
+          <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+            <table className="min-w-full border-collapse text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700">{t(locale, "Acción", "Action")}</th>
+                  <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700">{t(locale, "Dueño", "Owner")}</th>
+                  <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700">{t(locale, "Fecha", "Date")}</th>
+                  <th className="border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold text-slate-700">{t(locale, "Estado", "Status")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actions.map((a) => (
+                  <tr key={a.id} className="hover:bg-slate-50">
+                    <td className="min-w-[260px] border-b border-slate-100 px-3 py-2">{a.task}</td>
+                    <td className="min-w-[140px] border-b border-slate-100 px-3 py-2">{a.owner ?? ""}</td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-3 py-2">{fmtDate(a.dueDate)}</td>
+                    <td className="min-w-[120px] border-b border-slate-100 px-3 py-2">{a.status ?? ""}</td>
+                  </tr>
+                ))}
+                {actions.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-sm text-slate-500">
+                      {t(locale, "Aún no hay acciones.", "No actions yet.")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "Decisiones recientes", "Recent decisions")}</div>
+          <div className="mt-3 space-y-2">
+            {decisions.map((d) => (
+              <div key={d.id} className="rounded-xl border border-slate-200 p-3">
+                <div className="text-xs font-semibold text-slate-500">{fmtDate(d.date)}</div>
+                <div className="mt-1 text-sm font-medium text-slate-900">{d.decision}</div>
+                <div className="mt-1 text-xs text-slate-600">{d.responsible ?? ""}</div>
+              </div>
+            ))}
+            {decisions.length === 0 && (
+              <div className="rounded-xl border border-slate-200 p-3 text-sm text-slate-500">
+                {t(locale, "Aún no hay decisiones.", "No decisions yet.")}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3">
+            <div className="text-xs text-slate-500">{t(locale, "RACI (vista rápida)", "RACI (quick view)")}</div>
+            <div className="mt-2 space-y-2">
+              {raciRows.map((r) => (
+                <div key={r.id} className="rounded-xl border border-slate-200 p-3">
+                  <div className="text-sm font-medium text-slate-900">{r.initiativeName}</div>
+                  <div className="mt-1 text-xs text-slate-600">
+                    <span className="font-semibold">R:</span> {r.responsible ?? "—"}{" "}
+                    <span className="ml-2 font-semibold">A:</span> {r.approver ?? "—"}
+                  </div>
+                </div>
+              ))}
+              {raciRows.length === 0 && (
+                <div className="rounded-xl border border-slate-200 p-3 text-sm text-slate-500">
+                  {t(locale, "Aún no hay RACI.", "No RACI yet.")}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }

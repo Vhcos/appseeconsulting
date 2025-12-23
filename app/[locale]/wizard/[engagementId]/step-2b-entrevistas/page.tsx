@@ -1,4 +1,3 @@
-//  app/[locale]/wizard/[engagementId]/step-2b-entrevistas/page.tsx
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -22,445 +21,182 @@ const STATUS_OPTIONS: {
   { value: "ON_TRACK", labelEs: "Según lo planificado", labelEn: "On track" },
 ];
 
+type RoleKey =
+  | "DIRECTORIO"
+  | "CEO"
+  | "COO"
+  | "HSEC"
+  | "COMMERCIAL"
+  | "DATA_PRODUCT"
+  | "FINANCE"
+  | "CLIENT";
+
+const ROLE_LABELS: Record<RoleKey, { es: string; en: string }> = {
+  DIRECTORIO: { es: "Directorio", en: "Board" },
+  CEO: { es: "CEO (Gerente General)", en: "CEO (General Manager)" },
+  COO: { es: "COO (Operaciones)", en: "COO (Operations)" },
+  HSEC: { es: "HSEC", en: "HSEC" },
+  COMMERCIAL: { es: "Comercial", en: "Commercial" },
+  DATA_PRODUCT: { es: "Data & Producto", en: "Data & Product" },
+  FINANCE: { es: "Finanzas (CFO)", en: "Finance (CFO)" },
+  CLIENT: { es: "Entrevista a cliente", en: "Client interview" },
+};
+
 type ChecklistItem = {
   code: string;
-  titleEs: string;
-  titleEn: string;
-  descriptionEs?: string;
-  descriptionEn?: string;
+  order: number;
+  promptEs: string;
+  promptEn: string;
 };
 
-type ChecklistSection = {
-  key: string;
-  titleEs: string;
-  titleEn: string;
-  items: ChecklistItem[];
-};
-
-const INTERVIEW_CHECKLIST_MASTER: ChecklistSection[] = [
-  {
-    key: "C1",
-    titleEs: "C.1 Estructura recomendada (45–60 min)",
-    titleEn: "C.1 Recommended structure (45–60 min)",
-    items: [
-      {
-        code: "C1.1",
-        titleEs: "10 min: contexto y objetivos de la entrevista.",
-        titleEn: "10 min: context and interview objectives.",
-      },
-      {
-        code: "C1.2",
-        titleEs: "30–40 min: preguntas.",
-        titleEn: "30–40 min: questions.",
-      },
-      {
-        code: "C1.3",
-        titleEs: "10 min: evidencias a enviar + compromisos y fechas.",
-        titleEn: "10 min: evidence to send + commitments and dates.",
-      },
-    ],
-  },
-  {
-    key: "C2_BASE",
-    titleEs: "C.2 Guión base (para cualquier rol)",
-    titleEn: "C.2 Base script (for any role)",
-    items: [
-      {
-        code: "C2.1",
-        titleEs: "¿Qué hace que el cliente pague por nosotros (sin eslóganes)?",
-        titleEn: "What makes the client pay us (no slogans)?",
-      },
-      {
-        code: "C2.2",
-        titleEs: "¿Dónde ganamos y dónde perdemos (últimos 6 meses)?",
-        titleEn: "Where do we win and where do we lose (last 6 months)?",
-      },
-      {
-        code: "C2.3",
-        titleEs: "¿Qué es lo más frágil hoy para crecer sin romper calidad/seguridad?",
-        titleEn: "What is most fragile today to grow without breaking quality/safety?",
-      },
-      {
-        code: "C2.4",
-        titleEs: "¿Qué 3 cambios harías en 90 días?",
-        titleEn: "What 3 changes would you make in 90 days?",
-      },
-      {
-        code: "C2.5",
-        titleEs: "¿Qué no es negociable?",
-        titleEn: "What is non-negotiable?",
-      },
-      {
-        code: "C2.6",
-        titleEs: "¿Qué KPI te preocupa más y por qué?",
-        titleEn: "Which KPI worries you most and why?",
-      },
-    ],
-  },
-  {
-    key: "DIR",
-    titleEs: "Directorio",
-    titleEn: "Board / Directory",
-    items: [
-      {
-        code: "DIR.1",
-        titleEs: "Define éxito 12 y 36 meses (con números).",
-        titleEn: "Define success at 12 and 36 months (with numbers).",
-      },
-      {
-        code: "DIR.2",
-        titleEs: "Prioridad: margen vs participación vs expansión vs tecnología (orden).",
-        titleEn: "Priority: margin vs share vs expansion vs technology (rank).",
-      },
-      {
-        code: "DIR.3",
-        titleEs: "Riesgos no negociables.",
-        titleEn: "Non-negotiable risks.",
-      },
-      {
-        code: "DIR.4",
-        titleEs: "Inversión aceptable (personas, data, partners).",
-        titleEn: "Acceptable investment (people, data, partners).",
-      },
-      {
-        code: "DIR.5",
-        titleEs: "Qué iniciativas hay que matar aunque duelan.",
-        titleEn: "Which initiatives must be killed even if it hurts.",
-      },
-    ],
-  },
-  {
-    key: "CEO",
-    titleEs: "CEO (Gerente General)",
-    titleEn: "CEO (General Manager)",
-    items: [
-      {
-        code: "CEO.1",
-        titleEs: "¿Dónde se cae la máquina: venta, implementación, operación, cobranza?",
-        titleEn: "Where does the machine break: sales, implementation, operations, collections?",
-      },
-      {
-        code: "CEO.2",
-        titleEs: "¿Qué valor mueve renovación de verdad: agua, continuidad, cumplimiento, data?",
-        titleEn: "What value truly drives renewal: water, continuity, compliance, data?",
-      },
-      {
-        code: "CEO.3",
-        titleEs: "5 cuentas/faenas “must win” y por qué.",
-        titleEn: "5 must-win accounts/sites and why.",
-      },
-      {
-        code: "CEO.4",
-        titleEs: "¿Qué no escala hoy y por qué (personas, procesos, data, seguridad)?",
-        titleEn: "What doesn't scale today and why (people, process, data, safety)?",
-      },
-      {
-        code: "CEO.5",
-        titleEs: "¿Qué estándar mínimo instalable en 60 días?",
-        titleEn: "What minimum standard can be installed in 60 days?",
-      },
-    ],
-  },
-  {
-    key: "COO",
-    titleEs: "COO (Operaciones)",
-    titleEn: "COO (Operations)",
-    items: [
-      {
-        code: "COO.1",
-        titleEs: "Variables que más mueven el polvo en terreno (velocidad/tráfico/mantención/clima).",
-        titleEn: "Variables that most impact dust on site (speed/traffic/maintenance/weather).",
-      },
-      {
-        code: "COO.2",
-        titleEs: "Qué se puede estandarizar vs qué debe ser a medida (y el límite).",
-        titleEn: "What can be standardized vs customized (and the limit).",
-      },
-      {
-        code: "COO.3",
-        titleEs: "Dónde se genera retrabajo y su costo.",
-        titleEn: "Where rework is created and its cost.",
-      },
-      {
-        code: "COO.4",
-        titleEs: "Capacidad real (m²/mes) por dotación/equipos y cuellos de botella.",
-        titleEn: "Real capacity (m²/month) by staffing/equipment and bottlenecks.",
-      },
-      {
-        code: "COO.5",
-        titleEs: "3 métricas operativas que revisarías semanalmente.",
-        titleEn: "3 operational metrics you'd review weekly.",
-      },
-    ],
-  },
-  {
-    key: "HSEC",
-    titleEs: "HSEC",
-    titleEn: "HSEC",
-    items: [
-      {
-        code: "HSEC.1",
-        titleEs: "Controles críticos y cómo se verifican (documental + terreno).",
-        titleEn: "Critical controls and how they are verified (documents + field).",
-      },
-      {
-        code: "HSEC.2",
-        titleEs: "Brechas vs estándar gran minería.",
-        titleEn: "Gaps vs large mining standard.",
-      },
-      {
-        code: "HSEC.3",
-        titleEs: "Evidencia que entregamos y evidencia faltante.",
-        titleEn: "Evidence we deliver vs missing evidence.",
-      },
-      {
-        code: "HSEC.4",
-        titleEs: "Flujo incidentes/casi-incidentes: tiempos, responsables, acciones correctivas.",
-        titleEn: "Incidents/near-misses flow: timing, owners, corrective actions.",
-      },
-      {
-        code: "HSEC.5",
-        titleEs: "Qué estándar mínimo instalable en 60 días.",
-        titleEn: "What minimum standard can be installed in 60 days.",
-      },
-    ],
-  },
-  {
-    key: "COM",
-    titleEs: "Comercial",
-    titleEn: "Commercial",
-    items: [
-      {
-        code: "COM.1",
-        titleEs: "Mapa real de decisores por cuenta (Ops/HSEC/Abastecimiento/Gerencia).",
-        titleEn: "Real decision-maker map per account (Ops/HSEC/Procurement/Management).",
-      },
-      {
-        code: "COM.2",
-        titleEs: "Por qué perdimos las últimas 5 oportunidades (hechos).",
-        titleEn: "Why we lost the last 5 opportunities (facts).",
-      },
-      {
-        code: "COM.3",
-        titleEs: "Qué prueba convierte piloto en contrato.",
-        titleEn: "What proof converts a pilot into a contract.",
-      },
-      {
-        code: "COM.4",
-        titleEs: "Cómo defendemos precio sin guerra de precios.",
-        titleEn: "How we defend price without a price war.",
-      },
-      {
-        code: "COM.5",
-        titleEs: "Qué canal acelera: contratistas/partners/venta directa.",
-        titleEn: "Which channel accelerates: contractors/partners/direct sales.",
-      },
-    ],
-  },
-  {
-    key: "DATA",
-    titleEs: "Data & Producto",
-    titleEn: "Data & Product",
-    items: [
-      {
-        code: "DATA.1",
-        titleEs: "Qué se mide, cómo, frecuencia, calidad y trazabilidad.",
-        titleEn: "What is measured, how, frequency, quality and traceability.",
-      },
-      {
-        code: "DATA.2",
-        titleEs: "Qué quiere Operación vs Alta Dirección (son 2 reportes).",
-        titleEn: "What Operations wants vs Senior Management (two reports).",
-      },
-      {
-        code: "DATA.3",
-        titleEs: "Qué KPI es auditable hoy y con qué evidencia.",
-        titleEn: "Which KPI is auditable today and with what evidence.",
-      },
-      {
-        code: "DATA.4",
-        titleEs: "Top 5 mejoras (impacto/esfuerzo).",
-        titleEn: "Top 5 improvements (impact/effort).",
-      },
-      {
-        code: "DATA.5",
-        titleEs: "Cómo se vuelve producto cobrable la data (pack, upsell, estándar).",
-        titleEn: "How data becomes a billable product (pack, upsell, standard).",
-      },
-    ],
-  },
-  {
-    key: "CFO",
-    titleEs: "Finanzas (CFO)",
-    titleEn: "Finance (CFO)",
-    items: [
-      {
-        code: "CFO.1",
-        titleEs: "Rentabilidad por contrato y drivers de costo.",
-        titleEn: "Profitability per contract and cost drivers.",
-      },
-      {
-        code: "CFO.2",
-        titleEs: "Capital de trabajo y cobranzas como cuello de botella.",
-        titleEn: "Working capital and collections as bottleneck.",
-      },
-      {
-        code: "CFO.3",
-        titleEs: "Contratos grandes pero malos (por qué).",
-        titleEn: "Big but bad contracts (why).",
-      },
-      {
-        code: "CFO.4",
-        titleEs: "Inversiones con payback (retorno) claro.",
-        titleEn: "Investments with clear payback.",
-      },
-      {
-        code: "CFO.5",
-        titleEs: "Supuestos críticos para cumplir meta anual.",
-        titleEn: "Critical assumptions to hit the annual target.",
-      },
-    ],
-  },
-  {
-    key: "CLIENT",
-    titleEs: "C.3 Entrevista a cliente (30 min)",
-    titleEn: "C.3 Client interview (30 min)",
-    items: [
-      {
-        code: "CLIENT.1",
-        titleEs: "¿Qué es éxito para ustedes: agua, continuidad, cumplimiento, costo, seguridad, data?",
-        titleEn: "What is success for you: water, continuity, compliance, cost, safety, data?",
-      },
-      {
-        code: "CLIENT.2",
-        titleEs: "¿Qué indicador usarían para defender renovación interna?",
-        titleEn: "Which indicator would you use to defend internal renewal?",
-      },
-      {
-        code: "CLIENT.3",
-        titleEs: "¿Qué les hace perder tiempo con proveedores?",
-        titleEn: "What makes you lose time with suppliers?",
-      },
-      {
-        code: "CLIENT.4",
-        titleEs: "¿Qué debería mejorar para ampliar alcance (más m²/frentes)?",
-        titleEn: "What should improve to expand scope (more m²/fronts)?",
-      },
-      {
-        code: "CLIENT.5",
-        titleEs: "¿Qué formato de reporte les sirve (operación vs alta dirección)?",
-        titleEn: "Which report format helps you (operations vs senior management)?",
-      },
-    ],
-  },
+const BASE_ITEMS: ChecklistItem[] = [
+  { code: "C2.1", order: 1, promptEs: "¿Qué hace que el cliente pague por nosotros (sin eslóganes)?", promptEn: "What makes the client pay us (no slogans)?" },
+  { code: "C2.2", order: 2, promptEs: "¿Dónde ganamos y dónde perdemos (últimos 6 meses)?", promptEn: "Where do we win and lose (last 6 months)?" },
+  { code: "C2.3", order: 3, promptEs: "¿Qué es lo más frágil hoy para crecer sin romper calidad/seguridad?", promptEn: "What is most fragile today when scaling without breaking quality/safety?" },
+  { code: "C2.4", order: 4, promptEs: "¿Qué 3 cambios harías en 90 días?", promptEn: "What 3 changes would you make in 90 days?" },
+  { code: "C2.5", order: 5, promptEs: "¿Qué no es negociable?", promptEn: "What is non-negotiable?" },
+  { code: "C2.6", order: 6, promptEs: "¿Qué KPI te preocupa más y por qué?", promptEn: "Which KPI worries you most and why?" },
 ];
 
-type StoredItemState = {
+const ROLE_ITEMS: Record<RoleKey, ChecklistItem[]> = {
+  DIRECTORIO: [
+    ...BASE_ITEMS,
+    { code: "DIR.1", order: 101, promptEs: "Define éxito 12 y 36 meses (con números).", promptEn: "Define success at 12 and 36 months (with numbers)." },
+    { code: "DIR.2", order: 102, promptEs: "Prioridad: margen vs participación vs expansión vs tecnología (orden).", promptEn: "Priority: margin vs share vs expansion vs technology (ranked)." },
+    { code: "DIR.3", order: 103, promptEs: "Riesgos no negociables.", promptEn: "Non-negotiable risks." },
+    { code: "DIR.4", order: 104, promptEs: "Inversión aceptable (personas, data, partners).", promptEn: "Acceptable investment (people, data, partners)." },
+    { code: "DIR.5", order: 105, promptEs: "Qué iniciativas hay que matar aunque duelan.", promptEn: "Which initiatives must be killed even if painful." },
+  ],
+  CEO: [
+    ...BASE_ITEMS,
+    { code: "CEO.1", order: 201, promptEs: "¿Dónde se cae la máquina: venta, implementación, operación, cobranza?", promptEn: "Where does the machine break: sales, implementation, operations, collections?" },
+    { code: "CEO.2", order: 202, promptEs: "¿Qué valor mueve renovación de verdad: agua, continuidad, cumplimiento, data?", promptEn: "What truly drives renewals: water, continuity, compliance, data?" },
+    { code: "CEO.3", order: 203, promptEs: "5 cuentas/faenas “must win” y por qué.", promptEn: "5 “must win” accounts/sites and why." },
+    { code: "CEO.4", order: 204, promptEs: "¿Qué no escala hoy y por qué (personas, procesos, data, seguridad)?", promptEn: "What doesn’t scale today and why (people, process, data, safety)?" },
+  ],
+  COO: [
+    ...BASE_ITEMS,
+    { code: "COO.1", order: 301, promptEs: "Variables que más mueven el polvo en terreno (velocidad/tráfico/mantención/clima).", promptEn: "Variables that most impact dust onsite (speed/traffic/maintenance/weather)." },
+    { code: "COO.2", order: 302, promptEs: "Qué se puede estandarizar vs qué debe ser a medida (y el límite).", promptEn: "What can be standardized vs must be custom (and the limit)." },
+    { code: "COO.3", order: 303, promptEs: "Dónde se genera retrabajo y su costo.", promptEn: "Where rework happens and its cost." },
+    { code: "COO.4", order: 304, promptEs: "Capacidad real (m²/mes) por dotación/equipos y cuellos de botella.", promptEn: "Real capacity (m²/month) by crews/equipment and bottlenecks." },
+    { code: "COO.5", order: 305, promptEs: "3 métricas operativas que revisarías semanalmente.", promptEn: "3 operational metrics you’d review weekly." },
+  ],
+  HSEC: [
+    ...BASE_ITEMS,
+    { code: "HSEC.1", order: 401, promptEs: "Controles críticos y cómo se verifican (documental + terreno).", promptEn: "Critical controls and how they are verified (docs + field)." },
+    { code: "HSEC.2", order: 402, promptEs: "Brechas vs estándar gran minería.", promptEn: "Gaps vs large-mining standard." },
+    { code: "HSEC.3", order: 403, promptEs: "Evidencia que entregamos y evidencia faltante.", promptEn: "Evidence we deliver and evidence missing." },
+    { code: "HSEC.4", order: 404, promptEs: "Flujo incidentes/casi-incidentes: tiempos, responsables, acciones correctivas.", promptEn: "Incidents/near-misses flow: times, owners, corrective actions." },
+    { code: "HSEC.5", order: 405, promptEs: "Qué estándar mínimo instalable en 60 días.", promptEn: "Minimum standard installable in 60 days." },
+  ],
+  COMMERCIAL: [
+    ...BASE_ITEMS,
+    { code: "COM.1", order: 501, promptEs: "Mapa real de decisores por cuenta (Ops/HSEC/Abastecimiento/Gerencia).", promptEn: "Real decision-maker map per account (Ops/HSEC/Procurement/Management)." },
+    { code: "COM.2", order: 502, promptEs: "Por qué perdimos las últimas 5 oportunidades (hechos).", promptEn: "Why we lost the last 5 opportunities (facts)." },
+    { code: "COM.3", order: 503, promptEs: "Qué prueba convierte piloto en contrato.", promptEn: "What proof converts pilot into contract." },
+    { code: "COM.4", order: 504, promptEs: "Cómo defendemos precio sin guerra de precios.", promptEn: "How we defend price without price wars." },
+    { code: "COM.5", order: 505, promptEs: "Qué canal acelera: contratistas/partners/venta directa.", promptEn: "Which channel accelerates: contractors/partners/direct sales." },
+  ],
+  DATA_PRODUCT: [
+    ...BASE_ITEMS,
+    { code: "DATA.1", order: 601, promptEs: "Qué se mide, cómo, frecuencia, calidad y trazabilidad.", promptEn: "What is measured, how, frequency, quality and traceability." },
+    { code: "DATA.2", order: 602, promptEs: "Qué quiere Operación vs Alta Dirección (son 2 reportes).", promptEn: "What Ops vs senior management want (two different reports)." },
+    { code: "DATA.3", order: 603, promptEs: "Qué KPI es auditable hoy y con qué evidencia.", promptEn: "Which KPI is auditable today and with what evidence." },
+    { code: "DATA.4", order: 604, promptEs: "Top 5 mejoras (impacto/esfuerzo).", promptEn: "Top 5 improvements (impact/effort)." },
+    { code: "DATA.5", order: 605, promptEs: "Cómo se vuelve producto cobrable la data (pack, upsell, estándar).", promptEn: "How data becomes a billable product (pack, upsell, standard)." },
+  ],
+  FINANCE: [
+    ...BASE_ITEMS,
+    { code: "FIN.1", order: 701, promptEs: "Rentabilidad por contrato y drivers de costo.", promptEn: "Profitability per contract and cost drivers." },
+    { code: "FIN.2", order: 702, promptEs: "Capital de trabajo y cobranzas como cuello de botella.", promptEn: "Working capital and collections as bottleneck." },
+    { code: "FIN.3", order: 703, promptEs: "Contratos grandes pero malos (por qué).", promptEn: "Big but bad contracts (why)." },
+    { code: "FIN.4", order: 704, promptEs: "Inversiones con payback claro.", promptEn: "Investments with clear payback." },
+    { code: "FIN.5", order: 705, promptEs: "Supuestos críticos para cumplir meta anual.", promptEn: "Critical assumptions to hit annual target." },
+  ],
+  CLIENT: [
+    { code: "CL.1", order: 1, promptEs: "¿Qué es éxito para ustedes: agua, continuidad, cumplimiento, costo, seguridad, data?", promptEn: "What is success for you: water, continuity, compliance, cost, safety, data?" },
+    { code: "CL.2", order: 2, promptEs: "¿Qué indicador usarían para defender renovación interna?", promptEn: "Which indicator would you use to defend an internal renewal?" },
+    { code: "CL.3", order: 3, promptEs: "¿Qué les hace perder tiempo con proveedores?", promptEn: "What makes you lose time with suppliers?" },
+    { code: "CL.4", order: 4, promptEs: "¿Qué debería mejorar para ampliar alcance (más m²/frentes)?", promptEn: "What should improve to expand scope (more m²/fronts)?" },
+    { code: "CL.5", order: 5, promptEs: "¿Qué formato de reporte les sirve (operación vs alta dirección)?", promptEn: "Which report format helps (operations vs senior management)?" },
+  ],
+};
+
+type ChecklistState = {
   status?: ProgressStatus;
-  owner?: string | null;
-  dueDate?: string | null; // YYYY-MM-DD
+  owner?: string;
+  dueDate?: string; // YYYY-MM-DD
   hasData?: boolean;
-  notes?: string | null;
+  notes?: string;
 };
 
-type StoredChecklist = {
-  items?: Record<string, StoredItemState>;
+type Step2BNotes = {
+  items?: Partial<Record<RoleKey, Record<string, ChecklistState>>>;
 };
 
-async function getChecklist(engagementId: string): Promise<StoredChecklist> {
-  const wp = await prisma.wizardProgress.findUnique({
-    where: {
-      engagementId_stepKey: {
-        engagementId,
-        stepKey: "step-2b-entrevistas-checklist",
-      },
-    },
+function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export default async function Step2BEntrevistasPage({ params }: { params: ParamsPromise }) {
+  const { locale, engagementId } = await params;
+
+  const stepKey = "step-2b-entrevistas";
+
+  const progress = await prisma.wizardProgress.findUnique({
+    where: { engagementId_stepKey: { engagementId, stepKey } },
     select: { notes: true },
   });
 
-  if (!wp?.notes) return {};
-  try {
-    return JSON.parse(wp.notes) as StoredChecklist;
-  } catch {
-    return {};
-  }
-}
+  const notes = safeJsonParse<Step2BNotes>(progress?.notes, { items: {} });
+  const itemsState = notes.items ?? {};
 
-async function saveChecklist(engagementId: string, payload: StoredChecklist) {
-  await prisma.wizardProgress.upsert({
-    where: {
-      engagementId_stepKey: {
-        engagementId,
-        stepKey: "step-2b-entrevistas-checklist",
-      },
-    },
-    update: { notes: JSON.stringify(payload) },
-    create: {
-      engagementId,
-      stepKey: "step-2b-entrevistas-checklist",
-      notes: JSON.stringify(payload),
-    },
-  });
-}
-
-export default async function Step2bEntrevistasPage({
-  params,
-}: {
-  params: ParamsPromise;
-}) {
-  const { locale, engagementId } = await params;
-
-  const stored = await getChecklist(engagementId);
-  const storedItems = stored.items ?? {};
-  const hasChecklist = Object.keys(storedItems).length > 0;
-
-  async function initChecklist() {
+  async function updateItem(formData: FormData) {
     "use server";
-    const base: StoredChecklist = { items: {} };
 
-    for (const section of INTERVIEW_CHECKLIST_MASTER) {
-      for (const item of section.items) {
-        base.items![item.code] = {
-          status: "NOT_STARTED",
-          owner: null,
-          dueDate: null,
-          hasData: false,
-          notes: null,
-        };
-      }
-    }
+    const locale = String(formData.get("locale") ?? "es");
+    const engagementId = String(formData.get("engagementId") ?? "");
+    const role = String(formData.get("role") ?? "") as RoleKey;
+    const code = String(formData.get("code") ?? "");
+    if (!engagementId || !role || !code) return;
 
-    await saveChecklist(engagementId, base);
-    revalidatePath(`/${locale}/wizard/${engagementId}/step-2b-entrevistas`);
-  }
-
-  async function updateChecklistItem(formData: FormData) {
-    "use server";
-    const code = String(formData.get("code") ?? "").trim();
-    if (!code) return;
-
-    const statusRaw = formData.get("status");
-    const status =
-      statusRaw && typeof statusRaw === "string"
-        ? (statusRaw as ProgressStatus)
-        : undefined;
-
-    const owner = (formData.get("owner") as string | null)?.trim() || null;
-    const dueDateStr = (formData.get("dueDate") as string | null)?.trim() || "";
-    const notes = (formData.get("notes") as string | null)?.trim() || null;
+    const statusRaw = String(formData.get("status") ?? "") as ProgressStatus;
+    const owner = String(formData.get("owner") ?? "").trim() || "";
+    const dueDate = String(formData.get("dueDate") ?? "").trim() || "";
+    const notesText = String(formData.get("notes") ?? "").trim() || "";
     const hasData = formData.get("hasData") === "on";
 
-    const current = await getChecklist(engagementId);
-    const items = current.items ?? {};
-    items[code] = {
-      status: status ?? items[code]?.status ?? "NOT_STARTED",
-      owner,
-      dueDate: dueDateStr ? dueDateStr : null,
+    const existing = await prisma.wizardProgress.findUnique({
+      where: { engagementId_stepKey: { engagementId, stepKey } },
+      select: { notes: true },
+    });
+
+    const current = safeJsonParse<Step2BNotes>(existing?.notes, { items: {} });
+    const next: Step2BNotes = { items: { ...(current.items ?? {}) } };
+
+    const roleMap = { ...(next.items?.[role] ?? {}) };
+    roleMap[code] = {
+      status: statusRaw || "NOT_STARTED",
+      owner: owner || undefined,
+      dueDate: dueDate || undefined,
       hasData,
-      notes,
+      notes: notesText || undefined,
     };
 
-    await saveChecklist(engagementId, { items });
+    next.items = { ...(next.items ?? {}), [role]: roleMap };
+
+    await prisma.wizardProgress.upsert({
+      where: { engagementId_stepKey: { engagementId, stepKey } },
+      update: { notes: JSON.stringify(next) },
+      create: { engagementId, stepKey, notes: JSON.stringify(next) },
+    });
+
     revalidatePath(`/${locale}/wizard/${engagementId}/step-2b-entrevistas`);
   }
 
@@ -472,7 +208,7 @@ export default async function Step2bEntrevistasPage({
     },
     {
       href: `/${locale}/wizard/${engagementId}/step-2-encuesta`,
-      label: t(locale, "2A Encuesta interna", "2A Internal survey"),
+      label: t(locale, "2 Encuesta", "2 Survey"),
       active: false,
     },
     {
@@ -482,13 +218,13 @@ export default async function Step2bEntrevistasPage({
     },
   ];
 
+  const label = (es: string, en: string) => (locale === "en" ? en : es);
+
+  const roleKeys = Object.keys(ROLE_LABELS) as RoleKey[];
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <WizardStepsNav
-        locale={locale}
-        engagementId={engagementId}
-        currentStep="step-2b-entrevistas"
-      />
+      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-2b-entrevistas" />
 
       <div className="mt-4 flex flex-wrap gap-2">
         {miniTabs.map((tab) => (
@@ -507,188 +243,166 @@ export default async function Step2bEntrevistasPage({
         ))}
       </div>
 
-      <section className="mt-8">
-        <h1 className="text-2xl font-semibold text-slate-900">
-          {t(locale, "Entrevistas (Anexo 2B)", "Interviews (Annex 2B)")}
-        </h1>
-        <p className="mt-2 max-w-4xl text-sm text-slate-600">
-          {t(
-            locale,
-            "Este checklist convierte el Anexo 2B en ejecución: define qué se preguntó, quién lo lidera, para cuándo, y qué evidencia quedó comprometida.",
-            "This checklist turns Annex 2B into execution: what was asked, who owns it, by when, and what evidence was committed.",
-          )}
-        </p>
-      </section>
-
-      <section className="mt-8">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              {t(
-                locale,
-                "Checklist de entrevistas (por rol)",
-                "Interview checklist (by role)",
-              )}
-            </h2>
-            <p className="mt-1 text-xs text-slate-600">
-              {t(
-                locale,
-                "Cada fila debería tener al menos estado, responsable y fecha objetivo.",
-                "Each row should have at least status, owner and target date.",
-              )}
-            </p>
-          </div>
-
-          {!hasChecklist && (
-            <form action={initChecklist}>
-              <button
-                type="submit"
-                className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
-              >
-                {t(
-                  locale,
-                  "Crear checklist de entrevistas",
-                  "Create interview checklist",
-                )}
-              </button>
-            </form>
-          )}
-        </div>
-
-        {hasChecklist ? (
-          <div className="mt-6 space-y-6">
-            {INTERVIEW_CHECKLIST_MASTER.map((section) => (
-              <section
-                key={section.key}
-                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-                <h3 className="text-sm font-semibold text-slate-900">
-                  {t(locale, section.titleEs, section.titleEn)}
-                </h3>
-
-                <div className="mt-3 grid grid-cols-6 gap-3 text-[11px] font-medium text-slate-500">
-                  <div>{t(locale, "Ítem", "Item")}</div>
-                  <div>{t(locale, "Estado", "Status")}</div>
-                  <div>{t(locale, "Responsable", "Owner")}</div>
-                  <div>{t(locale, "Fecha objetivo", "Target date")}</div>
-                  <div>{t(locale, "¿Listo?", "Ready?")}</div>
-                  <div>{t(locale, "Notas / Guardar", "Notes / Save")}</div>
-                </div>
-
-                <div className="mt-2 space-y-2">
-                  {section.items.map((item) => {
-                    const st = storedItems[item.code] ?? {};
-                    return (
-                      <form
-                        key={item.code}
-                        action={updateChecklistItem}
-                        className="grid grid-cols-6 gap-3 items-start rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2"
-                      >
-                        <input type="hidden" name="code" value={item.code} />
-
-                        <div className="text-xs text-slate-800">
-                          <div className="font-medium">
-                            {item.code} — {t(locale, item.titleEs, item.titleEn)}
-                          </div>
-                          {(item.descriptionEs || item.descriptionEn) && (
-                            <div className="mt-0.5 text-[11px] text-slate-500">
-                              {t(
-                                locale,
-                                item.descriptionEs ?? "",
-                                item.descriptionEn ?? "",
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <select
-                            name="status"
-                            defaultValue={st.status ?? "NOT_STARTED"}
-                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                          >
-                            {STATUS_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {t(locale, opt.labelEs, opt.labelEn)}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <input
-                            name="owner"
-                            defaultValue={st.owner ?? ""}
-                            placeholder={t(
-                              locale,
-                              "Ej: Consultor / Líder de área",
-                              "E.g. Consultant / Area lead",
-                            )}
-                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                          />
-                        </div>
-
-                        <div>
-                          <input
-                            type="date"
-                            name="dueDate"
-                            defaultValue={st.dueDate ?? ""}
-                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2 text-xs">
-                          <input
-                            id={`hasData-${item.code}`}
-                            type="checkbox"
-                            name="hasData"
-                            defaultChecked={st.hasData ?? false}
-                            className="h-4 w-4 rounded border-slate-300"
-                          />
-                          <label
-                            htmlFor={`hasData-${item.code}`}
-                            className="text-slate-700"
-                          >
-                            {t(locale, "Listo", "Ready")}
-                          </label>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            name="notes"
-                            defaultValue={st.notes ?? ""}
-                            rows={2}
-                            className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
-                            placeholder={t(
-                              locale,
-                              "Ej: Quedó comprometido enviar evidencia X antes del viernes.",
-                              "E.g. Evidence X committed by Friday.",
-                            )}
-                          />
-                          <button
-                            type="submit"
-                            className="self-end rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
-                          >
-                            {t(locale, "Guardar", "Save")}
-                          </button>
-                        </div>
-                      </form>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-slate-600">
+      <header className="mb-6 mt-6 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+            {t(locale, "Etapa 2B · Entrevistas", "Step 2B · Interviews")}
+          </p>
+          <h1 className="mt-1 text-xl font-semibold text-slate-900">
+            {t(locale, "Checklist de entrevistas por rol (Anexo 2B)", "Role-based interview checklist (Annex 2B)")}
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
             {t(
               locale,
-              "Todavía no has creado el checklist de entrevistas. Usa el botón de arriba para generarlo.",
-              "You have not created the interview checklist yet. Use the button above to generate it.",
+              "Calco del Data Room: por cada pregunta defines estado, responsable, fecha objetivo y notas. Esto alimenta el Diagnóstico 360°.",
+              "Data Room clone: for each question set status, owner, target date and notes. This feeds the 360° diagnosis.",
             )}
           </p>
-        )}
+
+          <Link
+            href={`/${locale}/wizard/${engagementId}/step-2-diagnostico-360`}
+            className="mt-2 inline-flex text-xs font-medium text-indigo-600 hover:text-indigo-500"
+          >
+            ← {t(locale, "Volver al Diagnóstico 360°", "Back to 360° diagnosis")}
+          </Link>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+          <p className="font-medium text-slate-800">{t(locale, "Estructura recomendada", "Recommended structure")}</p>
+          <ul className="mt-1 list-disc pl-4 text-[11px]">
+            <li>{t(locale, "10 min: contexto y objetivos.", "10 min: context and objectives.")}</li>
+            <li>{t(locale, "30–40 min: preguntas.", "30–40 min: questions.")}</li>
+            <li>{t(locale, "10 min: evidencias + compromisos y fechas.", "10 min: evidence + commitments and dates.")}</li>
+          </ul>
+        </div>
+      </header>
+
+      <section className="space-y-6">
+        {roleKeys.map((role) => {
+          const items = ROLE_ITEMS[role].slice().sort((a, b) => a.order - b.order);
+          const stateForRole = itemsState[role] ?? {};
+
+          const doneCount = items.reduce((acc, it) => acc + ((stateForRole[it.code]?.hasData ?? false) ? 1 : 0), 0);
+
+          return (
+            <section key={role} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold text-slate-900">{label(ROLE_LABELS[role].es, ROLE_LABELS[role].en)}</h2>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
+                  {t(locale, "Listo", "Done")}: {doneCount}/{items.length}
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-6 gap-3 text-[11px] font-medium text-slate-500">
+                <div>{t(locale, "Pregunta", "Question")}</div>
+                <div>{t(locale, "Estado", "Status")}</div>
+                <div>{t(locale, "Responsable", "Owner")}</div>
+                <div>{t(locale, "Fecha objetivo", "Target date")}</div>
+                <div>{t(locale, "¿Listo?", "Ready?")}</div>
+                <div>{t(locale, "Notas / Guardar", "Notes / Save")}</div>
+              </div>
+
+              <div className="mt-2 space-y-2">
+                {items.map((it) => {
+                  const st = stateForRole[it.code] ?? {};
+                  return (
+                    <form
+                      key={it.code}
+                      action={updateItem}
+                      className="grid grid-cols-6 gap-3 items-start rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2"
+                    >
+                      <input type="hidden" name="locale" value={locale} />
+                      <input type="hidden" name="engagementId" value={engagementId} />
+                      <input type="hidden" name="role" value={role} />
+                      <input type="hidden" name="code" value={it.code} />
+
+                      <div className="text-xs text-slate-800">
+                        <div className="font-medium">{it.code}</div>
+                        <div className="mt-0.5 text-[11px] text-slate-600">
+                          {label(it.promptEs, it.promptEn)}
+                        </div>
+                      </div>
+
+                      <div>
+                        <select
+                          name="status"
+                          defaultValue={(st.status as ProgressStatus) ?? "NOT_STARTED"}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                        >
+                          {STATUS_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {t(locale, opt.labelEs, opt.labelEn)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <input
+                          name="owner"
+                          defaultValue={st.owner ?? ""}
+                          placeholder={t(locale, "Ej: Consultor / Entrevistado", "E.g. Consultant / Interviewee")}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <input
+                          type="date"
+                          name="dueDate"
+                          defaultValue={st.dueDate ?? ""}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs">
+                        <input
+                          id={`hasData-${role}-${it.code}`}
+                          type="checkbox"
+                          name="hasData"
+                          defaultChecked={st.hasData ?? false}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        <label htmlFor={`hasData-${role}-${it.code}`} className="text-slate-700">
+                          {t(locale, "Listo", "Ready")}
+                        </label>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <textarea
+                          name="notes"
+                          defaultValue={st.notes ?? ""}
+                          rows={2}
+                          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                          placeholder={t(
+                            locale,
+                            "Ej: evidencias a pedir, frases clave, compromisos.",
+                            "E.g. evidence to request, key quotes, commitments.",
+                          )}
+                        />
+                        <button
+                          type="submit"
+                          className="self-end rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
+                        >
+                          {t(locale, "Guardar", "Save")}
+                        </button>
+                      </div>
+                    </form>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
       </section>
+
+      <p className="mt-4 text-[11px] text-slate-500">
+        {t(
+          locale,
+          "Tip: marca 'Listo' cuando tengas respuestas + evidencia/compromisos. Esto después se resume en el Diagnóstico 360°.",
+          "Tip: mark 'Ready' when you have answers + evidence/commitments. This later gets summarized in the 360° diagnosis.",
+        )}
+      </p>
     </main>
   );
 }

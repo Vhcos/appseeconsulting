@@ -30,7 +30,7 @@ export default async function TablesHome({ params }: { params: ParamsPromise }) 
     { href: `/${locale}/wizard/${engagementId}/tables/initiatives`, es: "Iniciativas", en: "Initiatives" },
     { href: `/${locale}/wizard/${engagementId}/tables/risks`, es: "Riesgos", en: "Risks" },
     { href: `/${locale}/wizard/${engagementId}/tables/decisions`, es: "Decisiones", en: "Decisions" },
-    { href: `/${locale}/wizard/${engagementId}/tables/roadmap`, es: "Roadmap 20 semanas", en: "20-week roadmap" },
+    { href: `/${locale}/wizard/${engagementId}/tables/roadmap-20w`, es: "Roadmap 20 semanas", en: "20-week roadmap" },
     { href: `/${locale}/wizard/${engagementId}/tables/actions`, es: "Action items", en: "Action items" },
     { href: `/${locale}/wizard/${engagementId}/tables/raci`, es: "RACI (Responsible, Accountable, Consulted, Informed)", en: "RACI (Responsible, Accountable, Consulted, Informed)" },
     { href: `/${locale}/wizard/${engagementId}/tables/unit-economics`, es: "Unit economics", en: "Unit economics" },

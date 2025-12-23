@@ -256,3 +256,103 @@ Para no terminar con una app fea:
 
 Este README es la brújula.  
 Si alguna decisión futura contradice esto, la revisamos antes de escribir código.
+# appseeconsulting — Complemento README (Panel/Reporte/Operación)
+
+## Estado actual
+El wizard tiene dos experiencias complementarias:
+
+### Wizard (cliente)
+- Step 3: `app/[locale]/wizard/[engagementId]/step-3-estrategia`
+  - Visión / Misión / Objetivos (máx 5)
+- Step 4: `app/[locale]/wizard/[engagementId]/step-4-foda`
+  - FODA (Fortalezas/Debilidades/Oportunidades/Amenazas)
+  - “Apoyo rápido desde Riesgos” (lista sugerida)
+
+### Soporte consultor (modo tabla + guía + video)
+- Strategy table: `app/[locale]/wizard/[engagementId]/tables/strategy`
+- SWOT table: `app/[locale]/wizard/[engagementId]/tables/swot`
+
+Ambos modos escriben a la misma fuente de verdad (ver sección “Data model”).
+
+---
+
+## Data model (fuente de verdad)
+Hoy la estrategia y el FODA se guardan en **Engagement**:
+
+- Strategy (Step-3)
+  - `strategyVision: String?`
+  - `strategyMission: String?`
+  - `strategyObjectives: String?` (1 por línea, máx 5)
+
+- SWOT (Step-4)
+  - `swotStrengths: String?`
+  - `swotWeaknesses: String?`
+  - `swotOpportunities: String?`
+  - `swotThreats: String?`
+
+> Nota: existe el modelo `EngagementStrategy`, pero **no es la fuente de verdad actual**. Evitar duplicar almacenamiento.
+
+---
+
+## Help videos
+Archivo: `lib/see/helpVideos.ts`
+
+- `getHelpVideo(key, locale)` devuelve título/ayuda/eta por idioma.
+- Helpers:
+  - `youtubeWatchUrl(youtubeId)`
+  - `youtubeEmbedUrl(youtubeId)`
+
+Keys usados:
+- `strategy`
+- `swot`
+- `account-plan`
+- `unit-economics`
+- `actions`
+
+Si `youtubeId` no existe, se muestra “Video aún no cargado”.
+
+---
+
+## Próxima etapa
+### Etapa 1: Panel + Informe (web)
+Objetivo: páginas que consuman datos reales Prisma y presenten:
+- estado del wizard
+- highlights ejecutivos
+- top riesgos, KPIs, iniciativas, acciones
+- informe imprimible en web (estilo “print-friendly”)
+
+Rutas sugeridas:
+- `app/[locale]/wizard/[engagementId]/dashboard/page.tsx`
+- `app/[locale]/wizard/[engagementId]/report/page.tsx`
+
+### Etapa 2: Operación periódica
+- check-in por período (semanal/mensual) para:
+  - registrar `KpiValue` por KPI y período
+  - actualizar iniciativas (progreso, evidencias, bloqueos)
+  - generar resumen de período (vs período anterior)
+
+---
+
+## Comandos útiles
+- Prisma:
+  - `npx prisma generate`
+  - `npx prisma migrate dev`
+  - **Evitar** `migrate reset` si hay data que importa.
+
+---
+
+## Troubleshooting
+
+### zsh: no matches found (rutas con corchetes)
+En zsh, rutas que incluyen `[` `]` deben ir entre comillas:
+- ✅ `"app/[locale]/wizard/[engagementId]/tables/strategy"`
+- ❌ `app/[locale]/wizard/[engagementId]/tables/strategy`
+
+### Prisma drift
+Si Prisma avisa “Drift detected”, significa que la DB no calza con el historial de migraciones.
+Recomendación: revisar migraciones y aplicar la corrección; **no resetear DB** sin una decisión explícita.
+
+### Keys duplicadas en React
+Si aparece `Encountered two children with the same key`, revisar `.map()` usando keys únicas (usar `id` o `label+index` si no hay id).
+
+---

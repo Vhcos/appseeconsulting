@@ -1,8 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import WizardStepsNav from "@/components/see/WizardStepsNav";
+import { getHelpVideo } from "@/lib/see/helpVideos";
+import { BscPerspective } from "@prisma/client";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
 
@@ -10,164 +10,162 @@ function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
-const PERSPECTIVE_LABELS: Record<string, { es: string; en: string }> = {
-  FINANCIAL: { es: "Finanzas", en: "Finance" },
-  CUSTOMER: { es: "Clientes", en: "Customers" },
-  INTERNAL: { es: "Procesos internos", en: "Internal processes" },
-  LEARNING: { es: "Personas / aprendizaje", en: "People / learning" },
-};
-
-function perspectiveLabel(locale: string, raw: unknown): string {
-  if (!raw) return "-";
-  const key = String(raw);
-  const labels = PERSPECTIVE_LABELS[key];
-  if (!labels) return key;
-  return locale === "en" ? labels.en : labels.es;
+function perspectiveLabel(locale: string, p: BscPerspective) {
+  const map: Record<BscPerspective, { es: string; en: string }> = {
+    FINANCIAL: { es: "Financiera", en: "Financial" },
+    CUSTOMER: { es: "Cliente", en: "Customer" },
+    INTERNAL_PROCESS: { es: "Proceso interno", en: "Internal process" },
+    LEARNING_GROWTH: { es: "Aprendizaje y crecimiento", en: "Learning & growth" },
+  };
+  return t(locale, map[p].es, map[p].en);
 }
 
-export default async function Step5BscPage({
-  params,
-}: {
-  params: ParamsPromise;
-}) {
+export default async function StepBscPage({ params }: { params: ParamsPromise }) {
   const { locale, engagementId } = await params;
 
-  const [kpiCount, initiatives] = await Promise.all([
-    prisma.kpi.count(),
-    prisma.initiative.findMany({ where: { engagementId } }),
+  const [kpis, initiativesTotal, initiativesLinked] = await Promise.all([
+    prisma.kpi.findMany({
+      where: { engagementId },
+      select: { id: true, perspective: true },
+    }),
+    prisma.initiative.count({ where: { engagementId } }),
+    prisma.initiative.count({ where: { engagementId, kpiId: { not: null } } }),
   ]);
 
-  const initiativesByPerspective: Record<string, any[]> = {};
-  for (const init of initiatives as any[]) {
-    const p = String(init.perspective ?? "OTHER");
-    if (!initiativesByPerspective[p]) initiativesByPerspective[p] = [];
-    initiativesByPerspective[p].push(init);
-  }
+  const counts: Record<BscPerspective, number> = {
+    FINANCIAL: 0,
+    CUSTOMER: 0,
+    INTERNAL_PROCESS: 0,
+    LEARNING_GROWTH: 0,
+  };
+  for (const k of kpis) counts[k.perspective] += 1;
+
+  const video = getHelpVideo(locale, "step-5-bsc");
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
-      <WizardStepsNav
-        locale={locale}
-        engagementId={engagementId}
-        currentStep="step-5-bsc"
-      />
+    <main className="mx-auto max-w-5xl px-4 py-6">
+      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-5-bsc" />
 
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">
-          {t(locale, "Cuadro de mando (BSC)", "Scorecard (BSC)")}
-        </h1>
+      <div className="mb-4">
+        <h1 className="text-xl font-semibold text-slate-900">{t(locale, "Paso 5 — BSC y KPIs", "Step 5 — Scorecard and KPIs")}</h1>
         <p className="mt-1 text-sm text-slate-600">
           {t(
             locale,
-            "Transformamos la visión y los objetivos estratégicos en un cuadro de mando con KPI, metas y responsables por perspectiva.",
-            "We transform vision and strategic goals into a scorecard with KPIs, targets and owners per perspective."
+            "Aquí definimos qué medimos. Después, iniciativas y roadmap empujan estos números.",
+            "Define what we measure. Then initiatives and the roadmap move these numbers."
           )}
         </p>
-      </header>
+      </div>
 
-      <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <section className="space-y-3">
-          <p className="text-xs text-slate-600">
-            {t(
-              locale,
-              "Este cuadro se conecta con dos cosas: la librería de KPIs de la compañía y el portafolio de iniciativas de este engagement.",
-              "This scorecard connects with two things: the company's KPI library and this engagement's initiative portfolio."
-            )}
-          </p>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-              <p className="text-[11px] font-medium text-slate-600">
-                {t(locale, "KPIs definidos (total)", "Defined KPIs (total)")}
-              </p>
-              <p className="mt-1 text-lg font-semibold text-slate-900">
-                {kpiCount}
-              </p>
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">
+              {t(locale, "Mira esto antes de seguir", "Watch this before continuing")}
             </div>
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
-              <p className="text-[11px] font-medium text-slate-600">
-                {t(locale, "Iniciativas en este engagement", "Initiatives in this engagement")}
-              </p>
-              <p className="mt-1 text-lg font-semibold text-slate-900">
-                {initiatives.length}
-              </p>
-              <Link
-                href={`/${locale}/wizard/${engagementId}/tables/initiatives`}
-                className="mt-2 inline-block text-[11px] text-indigo-600 hover:text-indigo-500"
-              >
-                {t(locale, "Ver tabla de iniciativas", "View initiatives table")}
-              </Link>
+            <div className="mt-1 text-sm text-slate-600">
+              {video.helper ?? ""}
+              {video.eta ? (
+                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                  {t(locale, "Tiempo estimado:", "Estimated time:")} {video.eta}
+                </span>
+              ) : null}
             </div>
           </div>
-        </section>
 
-        {/* Vista por perspectiva usando iniciativas como proxy de foco */}
-        <section className="space-y-3 pt-2">
-          <h2 className="text-sm font-semibold text-slate-900">
-            {t(locale, "Foco por perspectiva", "Focus by perspective")}
-          </h2>
-          <p className="text-xs text-slate-600">
-            {t(
-              locale,
-              "Aquí vemos cuántas iniciativas cuelgan de cada perspectiva del BSC. Más adelante podremos aterrizar los KPI por perspectiva.",
-              "Here we see how many initiatives hang from each BSC perspective. Later we can map the KPIs per perspective."
-            )}
-          </p>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            {Object.keys(initiativesByPerspective).length === 0 ? (
-              <p className="text-sm text-slate-500">
-                {t(
-                  locale,
-                  "Aún no hay iniciativas clasificadas por perspectiva. Puedes hacerlo en la tabla de iniciativas.",
-                  "There are no initiatives classified by perspective yet. You can do it in the initiatives table."
-                )}
-              </p>
-            ) : (
-              Object.entries(initiativesByPerspective).map(([p, list]) => (
-                <div
-                  key={p}
-                  className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
-                >
-                  <p className="text-[11px] font-medium text-slate-600">
-                    {perspectiveLabel(locale, p)}
-                  </p>
-                  <p className="mt-1 text-lg font-semibold text-slate-900">
-                    {list.length}{" "}
-                    {t(locale, "iniciativas", "initiatives")}
-                  </p>
-                  <ul className="mt-2 space-y-1 text-[11px] text-slate-700">
-                    {(list as any[]).slice(0, 4).map((init) => (
-                      <li key={init.id}>• {init.title ?? "-"}</li>
-                    ))}
-                    {list.length > 4 && (
-                      <li className="text-[11px] text-slate-500">
-                        +{list.length - 4} {t(locale, "más…", "more…")}
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <div className="flex items-center justify-between pt-2">
-          <p className="text-xs text-slate-500">
-            {t(
-              locale,
-              "Con el BSC armado pasamos al portafolio de iniciativas, donde ya conectamos directamente con las tablas.",
-              "With the BSC set up we move to the initiative portfolio, where we already connect directly with the tables."
-            )}
-          </p>
           <Link
-            href={`/${locale}/wizard/${engagementId}/step-6-portafolio`}
-            className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            href={`/${locale}/wizard/${engagementId}/tables/kpis?from=step-5-bsc`}
           >
-            {t(locale, "Ir a Portafolio →", "Go to Portfolio →")}
+            {t(locale, "Ir a KPIs", "Go to KPIs")}
           </Link>
         </div>
-      </div>
-    </div>
+
+        <div className="mt-3 overflow-hidden rounded-xl border border-dashed border-slate-300">
+          {video.youtubeId ? (
+            <div className="aspect-video w-full">
+              <iframe
+                className="h-full w-full"
+                src={`https://www.youtube-nocookie.com/embed/${video.youtubeId}`}
+                title={video.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <div className="p-4 text-sm text-slate-600">
+              <div className="font-medium text-slate-800">{t(locale, "Video aún no cargado.", "Video not set yet.")}</div>
+              <div className="mt-1">
+                {t(
+                  locale,
+                  "Cuando tengas el video en YouTube, agrega el youtubeId en lib/see/helpVideos.ts (step-5-bsc).",
+                  "When you have the video on YouTube, add the youtubeId in lib/see/helpVideos.ts (step-5-bsc)."
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "¿Cuántos KPIs tenemos?", "How many KPIs do we have?")}</div>
+          <div className="mt-3 grid gap-2">
+            {(Object.keys(counts) as BscPerspective[]).map((p) => (
+              <div key={p} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2">
+                <div className="text-sm text-slate-700">{perspectiveLabel(locale, p)}</div>
+                <div className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{counts[p]}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              href={`/${locale}/wizard/${engagementId}/tables/kpis?from=step-5-bsc`}
+            >
+              {t(locale, "Crear / editar KPIs", "Create / edit KPIs")}
+            </Link>
+
+            <Link
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              href={`/${locale}/wizard/${engagementId}/tables/initiatives?from=step-5-bsc`}
+            >
+              {t(locale, "Ir a Iniciativas", "Go to Initiatives")}
+            </Link>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-sm font-semibold text-slate-900">{t(locale, "Conexión con Iniciativas", "Connection to Initiatives")}</div>
+          <p className="mt-2 text-sm text-slate-600">
+            {t(
+              locale,
+              "Lo ideal: cada iniciativa empuja un KPI.",
+              "Ideal: each initiative pushes a KPI."
+            )}
+          </p>
+
+          <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            <div className="flex items-center justify-between">
+              <span>{t(locale, "Iniciativas totales", "Total initiatives")}</span>
+              <span className="font-semibold">{initiativesTotal}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between">
+              <span>{t(locale, "Con KPI asociado", "Linked to a KPI")}</span>
+              <span className="font-semibold">{initiativesLinked}</span>
+            </div>
+          </div>
+
+          <div className="mt-3 text-xs text-slate-500">
+            {t(
+              locale,
+              "Si hay muchas iniciativas sin KPI, el seguimiento se vuelve difuso.",
+              "If many initiatives have no KPI, tracking becomes fuzzy."
+            )}
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }

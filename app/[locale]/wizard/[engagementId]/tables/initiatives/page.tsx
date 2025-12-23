@@ -1,355 +1,624 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { BscPerspective } from "@prisma/client";
 
+export const dynamic = "force-dynamic";
+
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+type SearchParams = Record<string, string | string[] | undefined>;
+type SearchParamsPromise = Promise<SearchParams>;
 
 function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
+function readString(sp: SearchParams, key: string): string {
+  const v = sp[key];
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v[0] ?? "";
+  return "";
+}
+
+function sanitizeSegment(raw: string): string {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+  if (!/^[a-zA-Z0-9\-]+$/.test(s)) return "";
+  return s;
+}
+
+function inferFromReferer(
+  referer: string | null,
+  locale: string,
+  engagementId: string
+): string {
+  if (!referer) return "";
+  try {
+    const u = new URL(referer);
+    const prefix = `/${locale}/wizard/${engagementId}/`;
+    if (!u.pathname.startsWith(prefix)) return "";
+    const rest = u.pathname.slice(prefix.length);
+    const seg = rest.split("/")[0] ?? "";
+    if (!seg) return "";
+    if (seg === "tables") return "tables";
+    if (seg.startsWith("step-")) return seg;
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+function parseIntMaybe(v: FormDataEntryValue | null): number | null {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.round(n);
+  return i;
+}
+
+function clamp1to5(n: number | null): number | null {
+  if (n == null) return null;
+  return Math.min(5, Math.max(1, n));
+}
+
+function parseDateMaybe(v: FormDataEntryValue | null): Date | null {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDate(d: Date | null | undefined): string {
+  if (!d) return "—";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 function perspectiveLabel(locale: string, p: BscPerspective) {
   const map: Record<BscPerspective, { es: string; en: string }> = {
-    FINANCIAL: { es: "Financiera", en: "Financial" },
+    FINANCIAL: { es: "Finanzas", en: "Financial" },
     CUSTOMER: { es: "Cliente", en: "Customer" },
-    INTERNAL_PROCESS: { es: "Proceso interno", en: "Internal process" },
-    LEARNING_GROWTH: { es: "Aprendizaje y crecimiento", en: "Learning & growth" },
+    INTERNAL_PROCESS: { es: "Operación", en: "Internal process" },
+    LEARNING_GROWTH: { es: "Equipo", en: "Learning & growth" },
   };
   return t(locale, map[p].es, map[p].en);
 }
 
-function fmtDate(d?: Date | null) {
-  if (!d) return "";
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
+export default async function InitiativesPage({
+  params,
+  searchParams,
+}: {
+  params: ParamsPromise;
+  searchParams?: SearchParams | SearchParamsPromise;
+}) {
+  const { locale, engagementId } = await params;
+  const sp = (searchParams ? await searchParams : {}) as SearchParams;
 
-async function createInitiativeAction(engagementId: string, locale: string, formData: FormData) {
-  "use server";
+  const fromParam = sanitizeSegment(readString(sp, "from"));
+  const fromRef = sanitizeSegment(
+    inferFromReferer((await headers()).get("referer"), locale, engagementId)
+  );
+  const from = fromParam || fromRef || "step-6-portafolio";
 
-  const title = String(formData.get("title") ?? "").trim();
-  const perspective = String(formData.get("perspective") ?? "").trim() as BscPerspective;
+  const backHref =
+    from === "tables"
+      ? `/${locale}/wizard/${engagementId}/tables`
+      : `/${locale}/wizard/${engagementId}/${from}`;
 
-  if (!title) return;
+  const engagement = await prisma.engagement.findUnique({
+    where: { id: engagementId },
+    select: { id: true, name: true, contextCompanyName: true },
+  });
 
-  const externalId = String(formData.get("externalId") ?? "").trim() || null;
-  const problem = String(formData.get("problem") ?? "").trim() || null;
+  if (!engagement) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <p className="text-sm">{t(locale, "Engagement no encontrado.", "Engagement not found.")}</p>
+        <Link className="text-sm text-indigo-600 hover:underline" href={`/${locale}/wizard`}>
+          {t(locale, "Volver", "Back")}
+        </Link>
+      </main>
+    );
+  }
 
-  const kpiId = String(formData.get("kpiId") ?? "").trim() || null;
+  const clientName =
+    (engagement.contextCompanyName && engagement.contextCompanyName.trim()) ||
+    (engagement.name && engagement.name.trim()) ||
+    t(locale, "Cliente", "Client");
 
-  const impactRaw = String(formData.get("impact") ?? "").trim();
-  const effortRaw = String(formData.get("effort") ?? "").trim();
-  const riskRaw = String(formData.get("risk") ?? "").trim();
+  // KPIs disponibles (para linkear la iniciativa con 1 KPI si aplica)
+  const kpis = await prisma.kpi.findMany({
+    where: { engagementId },
+    select: { id: true, nameEs: true, nameEn: true, perspective: true, frequency: true },
+    orderBy: [{ perspective: "asc" }, { nameEs: "asc" }],
+  });
 
-  const impact = impactRaw ? Number(impactRaw) : null;
-  const effort = effortRaw ? Number(effortRaw) : null;
-  const risk = riskRaw ? Number(riskRaw) : null;
+  async function createInitiative(formData: FormData) {
+    "use server";
 
-  const costEst = String(formData.get("costEst") ?? "").trim() || null;
-  const owner = String(formData.get("owner") ?? "").trim() || null;
-  const sponsor = String(formData.get("sponsor") ?? "").trim() || null;
+    const title = String(formData.get("title") ?? "").trim();
+    const owner = String(formData.get("owner") ?? "").trim();
+    const problem = String(formData.get("problem") ?? "").trim() || null;
+    const definitionDone = String(formData.get("definitionDone") ?? "").trim() || null;
 
-  const startDateRaw = String(formData.get("startDate") ?? "").trim();
-  const endDateRaw = String(formData.get("endDate") ?? "").trim();
+    const status = String(formData.get("status") ?? "").trim() || null;
+    const notes = String(formData.get("notes") ?? "").trim() || null;
 
-  const startDate = startDateRaw ? new Date(`${startDateRaw}T00:00:00.000Z`) : null;
-  const endDate = endDateRaw ? new Date(`${endDateRaw}T00:00:00.000Z`) : null;
+    const kpiIdRaw = String(formData.get("kpiId") ?? "").trim();
+    const kpiId = kpiIdRaw ? kpiIdRaw : null;
 
-  const status = String(formData.get("status") ?? "").trim() || null;
-  const definitionDone = String(formData.get("definitionDone") ?? "").trim() || null;
-  const dependencies = String(formData.get("dependencies") ?? "").trim() || null;
-  const notes = String(formData.get("notes") ?? "").trim() || null;
+    const perspectiveRaw = String(formData.get("perspective") ?? "").trim();
+    const perspective = (Object.values(BscPerspective).includes(perspectiveRaw as any)
+      ? (perspectiveRaw as BscPerspective)
+      : BscPerspective.INTERNAL_PROCESS);
 
-  await prisma.initiative.create({
-    data: {
-      engagementId,
-      externalId,
-      title,
-      perspective,
-      problem,
-      kpiId,
-      impact: Number.isFinite(impact as number) ? (impact as number) : null,
-      effort: Number.isFinite(effort as number) ? (effort as number) : null,
-      risk: Number.isFinite(risk as number) ? (risk as number) : null,
-      costEst,
-      owner,
-      sponsor,
-      startDate,
-      endDate,
-      status,
-      definitionDone,
-      dependencies,
-      notes,
+    const impact = clamp1to5(parseIntMaybe(formData.get("impact")));
+    const effort = clamp1to5(parseIntMaybe(formData.get("effort")));
+    const risk = clamp1to5(parseIntMaybe(formData.get("risk")));
+
+    const startDate = parseDateMaybe(formData.get("startDate"));
+    const endDate = parseDateMaybe(formData.get("endDate"));
+
+    const dependencies = String(formData.get("dependencies") ?? "").trim() || null;
+
+    // mínimos (sin burocracia): título + dueño
+    if (!title || !owner) return;
+
+    await prisma.initiative.create({
+      data: {
+        engagementId,
+        title,
+        owner,
+        perspective,
+        kpiId,
+        problem,
+        definitionDone,
+        status,
+        impact,
+        effort,
+        risk,
+        startDate,
+        endDate,
+        dependencies,
+        notes,
+      },
+    });
+
+    revalidatePath(`/${locale}/wizard/${engagementId}/tables/initiatives`);
+    // refrescos útiles en el “panel”
+    revalidatePath(`/${locale}/wizard/${engagementId}/step-0-contexto`);
+  }
+
+  async function deleteInitiative(formData: FormData) {
+    "use server";
+    const id = String(formData.get("id") ?? "").trim();
+    if (!id) return;
+
+    await prisma.initiative.delete({ where: { id } });
+
+    revalidatePath(`/${locale}/wizard/${engagementId}/tables/initiatives`);
+    revalidatePath(`/${locale}/wizard/${engagementId}/step-0-contexto`);
+  }
+
+  const initiatives = await prisma.initiative.findMany({
+    where: { engagementId },
+    orderBy: [{ startDate: "asc" }, { title: "asc" }],
+    include: {
+      kpi: { select: { id: true, nameEs: true, nameEn: true } },
     },
   });
 
-  revalidatePath(`/${locale}/wizard/${engagementId}/tables/initiatives`);
-}
-
-async function deleteInitiativeAction(id: string, engagementId: string, locale: string) {
-  "use server";
-  await prisma.initiative.delete({ where: { id } });
-  revalidatePath(`/${locale}/wizard/${engagementId}/tables/initiatives`);
-}
-
-export default async function InitiativesPage({ params }: { params: ParamsPromise }) {
-  const { locale, engagementId } = await params;
-
-  const [initiatives, kpis] = await Promise.all([
-    prisma.initiative.findMany({
-      where: { engagementId },
-      // OJO: tu schema NO tiene createdAt en Initiative, por eso NO lo usamos aquí.
-      orderBy: [{ startDate: "desc" }, { id: "desc" }],
-    }),
-    prisma.kpi.findMany({
-      where: { engagementId },
-      orderBy: [{ id: "desc" }],
-      select: { id: true, nameEs: true, nameEn: true },
-    }),
-  ]);
-
-  const title = t(locale, "Iniciativas", "Initiatives");
-
   return (
-    <main style={{ padding: 24 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "baseline", justifyContent: "space-between" }}>
+    <main className="mx-auto max-w-6xl px-6 py-8">
+      {/* Para que el header se sienta “con sentido”, destacamos el paso de Iniciativas */}
+      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-6-portafolio" />
+
+      <div className="mt-2 flex items-start justify-between gap-4">
         <div>
-          <h2 style={{ margin: 0 }}>{title}</h2>
-          <p style={{ marginTop: 6, opacity: 0.75 }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {t(locale, "Tabla", "Table")} · {t(locale, "Iniciativas (cosas que haremos)", "Initiatives (things we’ll do)")}
+          </p>
+          <h1 className="mt-1 text-xl font-semibold text-slate-900">
+            {t(locale, "Iniciativas", "Initiatives")} — {clientName}
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">
             {t(
               locale,
-              "Tabla igual al Anexo: iniciativas y su seguimiento.",
-              "Table matching the Annex: initiatives and tracking."
+              "Una iniciativa es una acción grande (pero aterrizada). Piensa: “esto es lo que haremos para mover la aguja”. No es teoría. Es trabajo real.",
+              "An initiative is a concrete action. Think: “this is what we’ll do to move results”. Not theory—real work."
             )}
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: 12 }}>
-          <Link href={`/${locale}/wizard/${engagementId}`}>{t(locale, "Volver", "Back")}</Link>
+        <div className="flex flex-col items-end gap-2">
+          <Link className="text-sm text-indigo-600 hover:underline" href={backHref}>
+            ← {t(locale, "Volver", "Back")}
+          </Link>
+
+          <Link
+            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            href={`/${locale}/wizard/${engagementId}/tables`}
+          >
+            {t(locale, "Ver todas las tablas", "See all tables")}
+          </Link>
         </div>
       </div>
 
-      <section style={{ marginTop: 16, padding: 16, border: "1px solid #e5e5e5", borderRadius: 12 }}>
-        <h3 style={{ marginTop: 0 }}>{t(locale, "Nueva iniciativa", "New initiative")}</h3>
+      {/* Video (placeholder) */}
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-900">
+              {t(locale, "Mira esto antes de llenar (2 min)", "Watch this before filling (2 min)")}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              {t(
+                locale,
+                "Cuando tengamos el video en YouTube, lo linkeamos aquí para que cualquiera sepa qué escribir (sin dudas).",
+                "When we have the YouTube video, we’ll link it here so anyone knows what to write (no doubts)."
+              )}
+            </p>
+          </div>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-600 md:w-[420px]">
+            {t(
+              locale,
+              "Video aún no cargado. (Después lo reemplazamos por un embed de YouTube.)",
+              "Video not loaded yet. (Later we’ll replace with a YouTube embed.)"
+            )}
+          </div>
+        </div>
+      </section>
 
-        <form action={createInitiativeAction.bind(null, engagementId, locale)} style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>ID</label>
-            <input name="externalId" placeholder={t(locale, "Ej: INI-01", "e.g. INI-01")} />
+      {/* Formulario */}
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {t(locale, "Nueva iniciativa", "New initiative")}
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">
+              {t(
+                locale,
+                "Regla simple: título claro + dueño. Lo demás ayuda, pero no bloquea.",
+                "Simple rule: clear title + owner. Everything else helps, but won’t block you."
+              )}
+            </p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Iniciativa", "Initiative")}</label>
-            <input name="title" required placeholder={t(locale, "Título corto", "Short title")} />
+          <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            <div className="font-semibold">{t(locale, "Ejemplo mini", "Mini example")}</div>
+            <div className="mt-1">
+              {t(
+                locale,
+                "Título: “Piloto 2 km + medición polvo” · Dueño: “Operaciones” · Hecho cuando: “2 km operando 30 días + reporte KPI”",
+                'Title: “2km pilot + dust measurement” · Owner: “Ops” · Done when: “2km running 30 days + KPI report”'
+              )}
+            </div>
+          </div>
+        </div>
+
+        <form action={createInitiative} className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Título (qué haremos)", "Title (what we’ll do)")} <span className="text-rose-600">*</span>
+            </label>
+            <input
+              name="title"
+              required
+              placeholder={t(locale, "Ej: Piloto 2 km + medición de polvo (con evidencia)", "Ex: 2km pilot + dust measurement (with evidence)")}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              {t(locale, "Si alguien lo lee en 5 segundos, debe entenderlo.", "If someone reads it in 5 seconds, they should get it.")}
+            </p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Perspectiva", "Perspective")}</label>
-            <select name="perspective" defaultValue="CUSTOMER">
-              <option value="FINANCIAL">{perspectiveLabel(locale, "FINANCIAL")}</option>
-              <option value="CUSTOMER">{perspectiveLabel(locale, "CUSTOMER")}</option>
-              <option value="INTERNAL_PROCESS">{perspectiveLabel(locale, "INTERNAL_PROCESS")}</option>
-              <option value="LEARNING_GROWTH">{perspectiveLabel(locale, "LEARNING_GROWTH")}</option>
-            </select>
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Dueño (quién lo empuja)", "Owner (who drives it)")} <span className="text-rose-600">*</span>
+            </label>
+            <input
+              name="owner"
+              required
+              placeholder={t(locale, "Ej: Operaciones / Comercial / HSEC", "Ex: Ops / Sales / HSE")}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Problema", "Problem")}</label>
-            <input name="problem" placeholder={t(locale, "¿Qué problema resuelve?", "What problem does it solve?")} />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "KPI asociado", "Linked KPI")}</label>
-            <select name="kpiId" defaultValue="">
-              <option value="">{t(locale, "Sin KPI", "No KPI")}</option>
-              {kpis.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {t(locale, k.nameEs, k.nameEn)}
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Área (para ordenar)", "Area (to organize)")}
+            </label>
+            <select
+              name="perspective"
+              defaultValue={BscPerspective.INTERNAL_PROCESS}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              {Object.values(BscPerspective).map((p) => (
+                <option key={p} value={p}>
+                  {perspectiveLabel(locale, p)}
                 </option>
               ))}
             </select>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Impacto / Esfuerzo / Riesgo", "Impact / Effort / Risk")}</label>
-            <input name="impact" type="number" placeholder={t(locale, "Impacto", "Impact")} />
-            <input name="effort" type="number" placeholder={t(locale, "Esfuerzo", "Effort")} />
-            <input name="risk" type="number" placeholder={t(locale, "Riesgo", "Risk")} />
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "¿Qué problema resuelve? (1 frase)", "What problem does it solve? (1 sentence)")}
+            </label>
+            <input
+              name="problem"
+              placeholder={t(locale, "Ej: Reducir polvo sin aumentar detenciones ni costos", "Ex: Reduce dust without increasing downtime or costs")}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Costo est.", "Est. cost")}</label>
-            <input name="costEst" placeholder={t(locale, "Ej: USD 3.000 / Mes", "e.g. USD 3,000 / Month")} />
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Hecho cuando… (definición de éxito, 1 frase)", "Done when… (success definition, 1 sentence)")}
+            </label>
+            <input
+              name="definitionDone"
+              placeholder={t(locale, "Ej: 30 días operando + evidencia + KPI en verde", "Ex: 30 days running + evidence + KPI green")}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Dueño / Sponsor", "Owner / Sponsor")}</label>
-            <input name="owner" placeholder={t(locale, "Dueño", "Owner")} />
-            <input name="sponsor" placeholder={t(locale, "Sponsor", "Sponsor")} />
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "KPI asociado (si aplica)", "Linked KPI (optional)")}
+            </label>
+            <select
+              name="kpiId"
+              defaultValue=""
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="">{t(locale, "— Ninguno", "— None")}</option>
+              {kpis.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {t(locale, k.nameEs, k.nameEn)} · {perspectiveLabel(locale, k.perspective)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {t(locale, "Si no hay KPI, no pasa nada. Igual sirve.", "No KPI? No problem. Still useful.")}
+            </p>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Inicio / Fin", "Start / End")}</label>
-            <input name="startDate" type="date" />
-            <input name="endDate" type="date" />
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Estado", "Status")}
+            </label>
+            <select
+              name="status"
+              defaultValue="Por iniciar"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="Por iniciar">{t(locale, "Por iniciar", "Not started")}</option>
+              <option value="En curso">{t(locale, "En curso", "In progress")}</option>
+              <option value="Bloqueada">{t(locale, "Bloqueada", "Blocked")}</option>
+              <option value="Hecha">{t(locale, "Hecha", "Done")}</option>
+            </select>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Estado", "Status")}</label>
-            <input name="status" placeholder={t(locale, "Ej: En curso", "e.g. In progress")} />
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Inicio (opcional)", "Start (optional)")}
+            </label>
+            <input
+              name="startDate"
+              type="date"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Def. terminado", "Definition done")}</label>
-            <input name="definitionDone" placeholder={t(locale, "Sí/No + criterio", "Yes/No + criteria")} />
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Fin (opcional)", "End (optional)")}
+            </label>
+            <input
+              name="endDate"
+              type="date"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Dependencias", "Dependencies")}</label>
-            <input name="dependencies" />
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Impacto (1–5)", "Impact (1–5)")}
+            </label>
+            <select
+              name="impact"
+              defaultValue=""
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="">{t(locale, "—", "—")}</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "start" }}>
-            <label>{t(locale, "Notas", "Notes")}</label>
-            <textarea name="notes" rows={3} />
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Esfuerzo (1–5)", "Effort (1–5)")}
+            </label>
+            <select
+              name="effort"
+              defaultValue=""
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="">{t(locale, "—", "—")}</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button type="submit">{t(locale, "Crear", "Create")}</button>
+          <div>
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Riesgo (1–5)", "Risk (1–5)")}
+            </label>
+            <select
+              name="risk"
+              defaultValue=""
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="">{t(locale, "—", "—")}</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Dependencias (si hay)", "Dependencies (if any)")}
+            </label>
+            <input
+              name="dependencies"
+              placeholder={t(locale, "Ej: Permisos / proveedor / aprobación HSEC", "Ex: Permits / supplier / HSE approval")}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold text-slate-800">
+              {t(locale, "Notas (opcional)", "Notes (optional)")}
+            </label>
+            <input
+              name="notes"
+              placeholder={t(locale, "Ej: Dejar evidencia (fotos, mediciones, reporte)", "Ex: Keep evidence (photos, measurements, report)")}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            />
+          </div>
+
+          <div className="md:col-span-2 flex items-center gap-3">
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              {t(locale, "Guardar iniciativa", "Save initiative")}
+            </button>
+
+            <Link
+              className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              href={`/${locale}/wizard/${engagementId}/tables`}
+            >
+              {t(locale, "Ver todas las tablas", "See all tables")}
+            </Link>
+
+            <span className="ml-auto text-xs text-slate-500">
+              {t(locale, "Total:", "Total:")} {initiatives.length}
+            </span>
           </div>
         </form>
       </section>
 
-      <section style={{ marginTop: 16 }}>
-        <div style={{ overflowX: "auto", border: "1px solid #e5e5e5", borderRadius: 12 }}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+      {/* Tabla */}
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              {t(locale, "Iniciativas registradas", "Registered initiatives")}
+            </h3>
+            <p className="mt-1 text-xs text-slate-600">
+              {t(
+                locale,
+                "Esto después alimenta el Roadmap y el Informe. Por ahora: que quede claro qué haremos y quién lo empuja.",
+                "This will feed the Roadmap and Report. For now: make it clear what we’ll do and who drives it."
+              )}
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
+            {t(locale, "Tip:", "Tip:")} {t(locale, "impacto alto + esfuerzo bajo = quick win.", "high impact + low effort = quick win.")}
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
             <thead>
-              <tr>
-                {[
-                  "ID",
-                  t(locale, "Iniciativa", "Initiative"),
-                  t(locale, "Perspectiva", "Perspective"),
-                  t(locale, "Problema", "Problem"),
-                  t(locale, "KPI asociado", "Linked KPI"),
-                  t(locale, "Impacto", "Impact"),
-                  t(locale, "Esfuerzo", "Effort"),
-                  t(locale, "Riesgo", "Risk"),
-                  t(locale, "Costo est.", "Est. cost"),
-                  t(locale, "Dueño", "Owner"),
-                  "Sponsor",
-                  t(locale, "Inicio", "Start"),
-                  t(locale, "Fin", "End"),
-                  t(locale, "Estado", "Status"),
-                  t(locale, "Def. terminado", "Definition done"),
-                  t(locale, "Dependencias", "Dependencies"),
-                  t(locale, "Notas", "Notes"),
-                  t(locale, "Acciones", "Actions"),
-                ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: "left",
-                      padding: "10px 12px",
-                      borderBottom: "1px solid #eee",
-                      whiteSpace: "nowrap",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
+              <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-500">
+                <th className="py-2 pr-3">{t(locale, "Iniciativa", "Initiative")}</th>
+                <th className="py-2 pr-3">{t(locale, "Área", "Area")}</th>
+                <th className="py-2 pr-3">{t(locale, "Dueño", "Owner")}</th>
+                <th className="py-2 pr-3">{t(locale, "KPI", "KPI")}</th>
+                <th className="py-2 pr-3">{t(locale, "Estado", "Status")}</th>
+                <th className="py-2 pr-3">{t(locale, "Fechas", "Dates")}</th>
+                <th className="py-2 pr-3">{t(locale, "I/E/R", "I/E/R")}</th>
+                <th className="py-2 pr-0 text-right">{t(locale, "Acción", "Action")}</th>
               </tr>
             </thead>
-
             <tbody>
-              {initiatives.map((it) => {
-                const kpi = it.kpiId ? kpis.find((k) => k.id === it.kpiId) : null;
-
-                return (
-                  <tr key={it.id}>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
-                      {it.externalId ?? ""}
+              {initiatives.length === 0 ? (
+                <tr>
+                  <td className="py-6 text-sm text-slate-500" colSpan={8}>
+                    {t(locale, "Aún no hay iniciativas. Agrega la primera arriba.", "No initiatives yet. Add the first one above.")}
+                  </td>
+                </tr>
+              ) : (
+                initiatives.map((it) => (
+                  <tr key={it.id} className="border-b border-slate-100 align-top">
+                    <td className="py-3 pr-3">
+                      <div className="font-medium text-slate-900">{it.title}</div>
+                      {(it.problem ?? "").trim() && (
+                        <div className="mt-1 text-[11px] text-slate-600">
+                          {t(locale, "Problema:", "Problem:")} {it.problem}
+                        </div>
+                      )}
+                      {(it.definitionDone ?? "").trim() && (
+                        <div className="mt-1 text-[11px] text-slate-600">
+                          {t(locale, "Hecho cuando:", "Done when:")} {it.definitionDone}
+                        </div>
+                      )}
+                      {(it.dependencies ?? "").trim() && (
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          {t(locale, "Dep:", "Deps:")} {it.dependencies}
+                        </div>
+                      )}
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 220 }}>
-                      {it.title}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
+                    <td className="py-3 pr-3 whitespace-nowrap text-slate-800">
                       {perspectiveLabel(locale, it.perspective)}
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 240 }}>
-                      {it.problem ?? ""}
+                    <td className="py-3 pr-3 whitespace-nowrap text-slate-800">
+                      {it.owner ?? "—"}
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 220 }}>
-                      {kpi ? t(locale, kpi.nameEs, kpi.nameEn) : ""}
+                    <td className="py-3 pr-3 text-slate-800">
+                      {it.kpi ? t(locale, it.kpi.nameEs, it.kpi.nameEn) : "—"}
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3" }}>{it.impact ?? ""}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3" }}>{it.effort ?? ""}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3" }}>{it.risk ?? ""}</td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 160 }}>
-                      {it.costEst ?? ""}
+                    <td className="py-3 pr-3 whitespace-nowrap">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                        {(it.status ?? "").trim() ? it.status : t(locale, "—", "—")}
+                      </span>
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 140 }}>
-                      {it.owner ?? ""}
+                    <td className="py-3 pr-3 whitespace-nowrap text-slate-800">
+                      {fmtDate(it.startDate)} → {fmtDate(it.endDate)}
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 140 }}>
-                      {it.sponsor ?? ""}
+                    <td className="py-3 pr-3 whitespace-nowrap text-slate-700">
+                      {it.impact ?? "—"} / {it.effort ?? "—"} / {it.risk ?? "—"}
                     </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
-                      {fmtDate(it.startDate)}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
-                      {fmtDate(it.endDate)}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 140 }}>
-                      {it.status ?? ""}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 160 }}>
-                      {it.definitionDone ?? ""}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 180 }}>
-                      {it.dependencies ?? ""}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 220 }}>
-                      {it.notes ?? ""}
-                    </td>
-
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
-                      <form
-                        action={deleteInitiativeAction.bind(null, it.id, engagementId, locale)}
-                        style={{ display: "inline" }}
-                      >
-                        <button type="submit" style={{ cursor: "pointer" }}>
+                    <td className="py-3 pr-0 text-right">
+                      <form action={deleteInitiative}>
+                        <input type="hidden" name="id" value={it.id} />
+                        <button className="text-xs font-semibold text-rose-600 hover:underline">
                           {t(locale, "Eliminar", "Delete")}
                         </button>
                       </form>
                     </td>
                   </tr>
-                );
-              })}
-
-              {initiatives.length === 0 && (
-                <tr>
-                  <td colSpan={18} style={{ padding: 16, opacity: 0.7 }}>
-                    {t(locale, "Aún no hay iniciativas.", "No initiatives yet.")}
-                  </td>
-                </tr>
+                ))
               )}
             </tbody>
           </table>

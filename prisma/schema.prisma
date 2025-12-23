@@ -99,6 +99,11 @@ enum SubscriptionStatus {
   CANCELED
 }
 
+enum SwotRiskTag {
+  OPPORTUNITY
+  THREAT
+}
+
 model User {
   id              String    @id @default(cuid())
   name            String?
@@ -181,14 +186,24 @@ model Engagement {
   endDate   DateTime?
 
   // Campos de la ficha del cliente (Step-0)
-  // 👇 NUEVOS CAMPOS PARA LA FICHA DEL CLIENTE
-  displayName        String? // nombre corto para mostrar en el dashboard / informe
-  contextCompanyName String? // nombre como quiere verse en el informe
-  contextIndustry    String? // rubro / industria
-  contextGoal12m     String? // meta a 12 meses
-  contextGoal36m     String? // meta a 36 meses
-  contextSponsor     String? // sponsor principal
-  contextCoreTeam    String? // equipo clave del proceso
+  displayName        String?
+  contextCompanyName String?
+  contextIndustry    String?
+  contextGoal12m     String?
+  contextGoal36m     String?
+  contextSponsor     String?
+  contextCoreTeam    String?
+
+  // Step 3 - Estrategia (guardado directo en Engagement)
+  strategyVision     String?
+  strategyMission    String?
+  strategyObjectives String? // 1 por línea (máx 5)
+
+  // Step 4 - FODA (guardado directo en Engagement)
+  swotStrengths     String?
+  swotWeaknesses    String?
+  swotOpportunities String?
+  swotThreats       String?
 
   localeDefault String @default("es")
 
@@ -492,6 +507,7 @@ model Risk {
   status      String?
   reviewDate  DateTime?
   notes       String?
+  swotTag     SwotRiskTag?
 
   engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 

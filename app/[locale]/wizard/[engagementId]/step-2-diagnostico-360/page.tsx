@@ -21,8 +21,8 @@ function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
 
 function pickNumberFromValueJson(v: unknown): number | null {
   if (!v || typeof v !== "object") return null;
-  const obj = v as any;
-  const n = obj?.value;
+  const obj = v as Record<string, unknown>;
+  const n = obj["value"];
   if (typeof n === "number") return n;
   if (typeof n === "string" && n.trim() !== "" && !Number.isNaN(Number(n))) return Number(n);
   return null;
@@ -30,8 +30,8 @@ function pickNumberFromValueJson(v: unknown): number | null {
 
 function pickStringFromValueJson(v: unknown, key: string): string | null {
   if (!v || typeof v !== "object") return null;
-  const obj = v as any;
-  const s = obj?.[key];
+  const obj = v as Record<string, unknown>;
+  const s = obj[key];
   return typeof s === "string" && s.trim() !== "" ? s.trim() : null;
 }
 
@@ -130,23 +130,61 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
     revalidatePath(`/${locale}/wizard/${engagementId}/step-2-diagnostico-360`);
   }
 
+  const label = (es: string | null, en: string | null) =>
+    locale === "en" ? (en ?? es ?? "") : (es ?? en ?? "");
+
+  const miniTabs = [
+    {
+      href: `/${locale}/wizard/${engagementId}/step-2-diagnostico-360`,
+      label: t(locale, "2 Diagnóstico 360", "2 360° diagnosis"),
+      active: true,
+    },
+    {
+      href: `/${locale}/wizard/${engagementId}/step-2-encuesta`,
+      label: t(locale, "2 Encuesta", "2 Survey"),
+      active: false,
+    },
+    {
+      href: `/${locale}/wizard/${engagementId}/step-2b-entrevistas`,
+      label: t(locale, "2B Entrevistas", "2B Interviews"),
+      active: false,
+    },
+  ];
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
+    <main className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
       <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-2-diagnostico-360" />
 
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mt-4 flex flex-wrap gap-2">
+        {miniTabs.map((tab) => (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={[
+              "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold",
+              tab.active
+                ? "bg-indigo-600 text-white"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+            ].join(" ")}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </div>
+
+      <div className="mb-6 mt-6 flex items-center justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
-            {t(locale, "Etapa 2 · Encuesta interna", "Step 2 · Internal survey")}
+            {t(locale, "Etapa 2 · Diagnóstico 360°", "Step 2 · 360° diagnosis")}
           </p>
           <h1 className="mt-1 text-xl font-semibold text-slate-900">
-            {t(locale, "Diagnóstico 360° (encuestas internas)", "360° diagnosis (internal surveys)")}
+            {t(locale, "Diagnóstico 360°", "360° diagnosis")}
           </h1>
           <p className="mt-1 text-sm text-slate-600">
             {t(
               locale,
-              "Cruzamos lo que dice el equipo, la gerencia y los datos para identificar brechas clave.",
-              "We cross what the team, management and data say to identify key gaps."
+              "Consolidamos encuestas internas + entrevistas para identificar brechas y priorizar acciones.",
+              "We consolidate internal surveys + interviews to identify gaps and prioritize actions.",
             )}
           </p>
         </div>
@@ -156,7 +194,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
         </Link>
       </div>
 
-      <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <section className="space-y-3">
           <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
@@ -166,7 +204,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
                 href={`/${locale}/wizard/${engagementId}/step-2-encuesta`}
                 className="mt-2 inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-[11px] font-semibold text-white hover:bg-indigo-700"
               >
-                {t(locale, "Responder encuesta interna", "Answer internal survey")}
+                {t(locale, "Responder encuesta", "Answer survey")}
               </Link>
             </div>
 
@@ -191,7 +229,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
               {t(
                 locale,
                 `Nota: se están ignorando preguntas no-Anexo B dentro del set SURVEY: ${ignored.join(", ")}.`,
-                `Note: ignoring non-Annex B questions found in SURVEY set: ${ignored.join(", ")}.`
+                `Note: ignoring non-Annex B questions found in SURVEY set: ${ignored.join(", ")}.`,
               )}
             </div>
           )}
@@ -200,12 +238,12 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">{t(locale, "Encuesta interna", "Internal survey")}</h2>
+              <h2 className="text-sm font-semibold text-slate-900">{t(locale, "Encuesta interna (promedios)", "Internal survey (averages)")}</h2>
               <p className="mt-1 text-xs text-slate-600">
                 {t(
                   locale,
-                  "Promedios agregados desde las respuestas (solo escala 1–5) + notas del consultor.",
-                  "Aggregated averages from answers (scale 1–5 only) + consultant notes."
+                  "Promedios desde respuestas (solo escala 1–5).",
+                  "Averages from answers (scale 1–5 only).",
                 )}
               </p>
             </div>
@@ -232,7 +270,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
                     return (
                       <tr key={q.id}>
                         <td className="px-3 py-2 align-top font-mono text-[11px] text-slate-500">{q.key}</td>
-                        <td className="px-3 py-2 align-top text-slate-800">{q.promptEs}</td>
+                        <td className="px-3 py-2 align-top text-slate-800">{label(q.promptEs, q.promptEn)}</td>
                         <td className="px-3 py-2 align-top text-slate-800">{avg == null ? "—" : avg.toFixed(2)}</td>
                         <td className="px-3 py-2 align-top text-slate-800">{agg?.n ?? 0}</td>
                       </tr>
@@ -260,14 +298,14 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
                   name="quantitativeSummary"
                   rows={4}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                  placeholder={t(locale, "Escribe el insight principal con números simples.", "Write the main insight with simple numbers.")}
+                  placeholder={t(locale, "Insight principal con números simples.", "Main insight with simple numbers.")}
                   defaultValue={notes.quantitativeSummary ?? ""}
                 />
               </div>
 
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-slate-700">
-                  {t(locale, "Ideas fuerza (respuestas abiertas)", "Key themes (open answers)")}
+                  {t(locale, "Ideas fuerza (abiertas)", "Key themes (open answers)")}
                 </label>
                 <textarea
                   name="openThemes"
@@ -282,7 +320,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-slate-700">
-                  {t(locale, "Entrevistas: gerencia / directorio (nota)", "Interviews: management / board (note)")}
+                  {t(locale, "Entrevistas: gerencia / directorio", "Interviews: management / board")}
                 </label>
                 <textarea
                   name="interviewsMgmtBoard"
@@ -295,7 +333,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
 
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-slate-700">
-                  {t(locale, "Entrevistas: operaciones / HSEC / cliente (nota)", "Interviews: ops / HSEC / client (note)")}
+                  {t(locale, "Entrevistas: ops / HSEC / cliente", "Interviews: ops / HSEC / client")}
                 </label>
                 <textarea
                   name="interviewsOpsHsecClient"
@@ -309,7 +347,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
 
             <div className="space-y-2">
               <label className="block text-xs font-medium text-slate-700">
-                {t(locale, "Brechas clave del diagnóstico (nota)", "Key gaps (note)")}
+                {t(locale, "Brechas clave del diagnóstico", "Key gaps")}
               </label>
               <textarea
                 name="keyGaps"
@@ -327,7 +365,7 @@ export default async function Step2Diagnostico360Page({ params }: { params: Para
             </div>
           </form>
         </section>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
