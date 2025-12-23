@@ -2,7 +2,6 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { getHelpVideo } from "@/lib/see/helpVideos";
 import { BscPerspective, KpiDirection, KpiFrequency } from "@prisma/client";
 
@@ -154,8 +153,6 @@ export default async function KpisPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-0-engagement" />
-
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">BSC</div>

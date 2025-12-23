@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { getHelpVideo } from "@/lib/see/helpVideos";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
@@ -42,8 +41,6 @@ export default async function StepGobernanzaPage({ params }: { params: ParamsPro
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-8-gobernanza" />
-
       <div className="mb-4">
         <h1 className="text-xl font-semibold text-slate-900">{t(locale, "Paso 8 — Gobernanza y seguimiento", "Step 8 — Governance & follow-up")}</h1>
         <p className="mt-1 text-sm text-slate-600">

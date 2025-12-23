@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import WizardStepsNavAuto from "@/components/see/WizardStepsNavAuto";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,7 @@ export default async function WizardEngagementLayout({
                 href={`/${locale}/wizard/${engagementId}/step-0-contexto`}
                 className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 hover:bg-slate-200"
               >
-                {t(locale, "Panel", "Dashboard")}
+                {t(locale, "Vista General", "Overview")}
               </Link>
 
               <Link
@@ -77,7 +78,14 @@ export default async function WizardEngagementLayout({
               </Link>
 
               <Link
-                href={`/${locale}/wizard/${engagementId}/step-9-reporte`}
+                href={`/${locale}/wizard/${engagementId}/check-in`}
+                className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 hover:bg-slate-200"
+              >
+                {t(locale, "Check-in", "Check-in")}
+              </Link>
+
+              <Link
+                href={`/${locale}/wizard/${engagementId}/report`}
                 className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 hover:bg-slate-200"
               >
                 {t(locale, "Informe", "Report")}
@@ -90,6 +98,13 @@ export default async function WizardEngagementLayout({
                 {t(locale, "Salir", "Exit")}
               </Link>
             </nav>
+          </div>
+        </div>
+
+        {/* Wizard nav global (fases + steps) */}
+        <div className="border-t border-slate-200">
+          <div className="mx-auto max-w-6xl px-4 py-3 lg:px-6">
+            <WizardStepsNavAuto locale={locale} engagementId={engagementId} />
           </div>
         </div>
       </header>

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { DATA_ROOM_MASTER } from "@/lib/data-room-master";
 import { DataRoomArea, ProgressStatus } from "@prisma/client";
 
@@ -149,11 +148,6 @@ export default async function Step1DataRoomPage({
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <WizardStepsNav
-        locale={locale}
-        engagementId={engagementId}
-        currentStep="step-1-data-room"
-      />
 
       {/* Intro */}
       <section className="mt-8">

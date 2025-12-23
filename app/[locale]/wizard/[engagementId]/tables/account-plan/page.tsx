@@ -2,7 +2,6 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { getHelpVideo, youtubeEmbedUrl, youtubeWatchUrl } from "@/lib/see/helpVideos";
 
 export const dynamic = "force-dynamic";
@@ -174,11 +173,6 @@ export default async function AccountPlanPage({
       </div>
 
       <div className="mt-6">
-        <WizardStepsNav
-          locale={locale}
-          engagementId={engagementId}
-          currentStep={navStep}
-        />
       </div>
 
       {/* Bloque video (estilo aret3) */}

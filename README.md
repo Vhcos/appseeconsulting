@@ -356,3 +356,81 @@ Recomendación: revisar migraciones y aplicar la corrección; **no resetear DB**
 Si aparece `Encountered two children with the same key`, revisar `.map()` usando keys únicas (usar `id` o `label+index` si no hay id).
 
 ---
+
+## Update — Dashboard + Ficha (Step 0) + Encuesta (B1)
+
+### Qué quedó resuelto
+
+* **NAV del wizard**: ya está resuelto y consistente en todo el proyecto (según lo acordado).
+* **Renombre Step-0**: `step-0-engagement` se entiende como **“Ficha”** y donde corresponde ya se muestra así.
+* **Fusión de pantallas**: el **Dashboard** ahora incluye todo lo que antes vivía en `step-0-contexto`:
+
+  * Ficha rápida del cliente (datos del engagement).
+  * Bloques de avance de tablas clave.
+  * Gráfico de encuesta **B1.*** filtrable por área (SurveyAveragesChart).
+
+### Resultado práctico
+
+* El usuario entra a `.../dashboard` y ve:
+
+  1. Panel (botones Informe, Check-in, Wizard)
+  2. **Ficha del cliente** + acceso a editar ficha
+  3. Estado / avance de tablas (Account plan, Unit economics, iniciativas/riesgos)
+  4. **Encuesta B1** (promedios, filtro por área)
+  5. Dashboard original (Estrategia, FODA, KPIs clave, Top riesgos, iniciativas, acciones, Data Room)
+
+### Archivos involucrados
+
+* **Modificado / reemplazado**
+
+  * `app/[locale]/wizard/[engagementId]/dashboard/page.tsx`
+
+    * Ahora incluye lo que antes era “Contexto”.
+    * El chip/step “Contexto” en “Estado del proceso” fue reemplazado por **“Ficha”** y apunta a:
+
+      * `/${locale}/wizard/${engagementId}/step-0-engagement`
+
+* **Listo para eliminar (después de verificar en local)**
+
+  * `app/[locale]/wizard/[engagementId]/step-0-contexto/page.tsx`
+
+### Dependencias y componentes
+
+* Se mantiene el uso de:
+
+  * `SurveyAveragesChart` (`@/components/see/SurveyAveragesChart`)
+  * Prisma models usados en la vista:
+
+    * `engagement`, `wizardProgress`, `questionSet`, `answer`
+    * `accountPlanRow`, `unitEconomicsRow`
+    * `dataRoomItem`, `dataRoomFile`
+    * `kpi`, `kpiValue`
+    * `initiative`, `risk`, `actionItem`
+
+### Notas de consistencia
+
+* **Fuente de verdad de “Ficha”**: sigue siendo el engagement (campos `context*`).
+* **Encuesta B1**:
+
+  * Se leen áreas configuradas desde `wizardProgress` con `stepKey = "survey-areas"` (fallback a `DEFAULT_AREAS_ES`).
+  * Se agregan áreas detectadas desde respuestas (`valueJson.area`) para no perder áreas reales.
+  * Se calculan promedios globales y por área.
+
+### Checklist rápido post-merge
+
+1. Abrir: `/{locale}/wizard/{engagementId}/dashboard`
+2. Verificar que cargue:
+
+   * Ficha (industria, metas, sponsor, equipo clave si existen)
+   * Contadores de tablas (account plan / unit economics / iniciativas / riesgos)
+   * Gráfico B1 (si hay respuestas)
+3. Probar links:
+
+   * Editar ficha → `step-0-engagement`
+   * Ir Data Room → `step-1-data-room`
+   * Ver tablas (account plan / unit economics / initiatives / risks)
+4. Si todo OK → borrar `step-0-contexto`
+
+---
+
+---

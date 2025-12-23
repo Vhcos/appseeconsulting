@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { getHelpVideo } from "@/lib/see/helpVideos";
 import { BscPerspective } from "@prisma/client";
 
@@ -44,8 +43,6 @@ export default async function StepBscPage({ params }: { params: ParamsPromise })
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-5-bsc" />
-
       <div className="mb-4">
         <h1 className="text-xl font-semibold text-slate-900">{t(locale, "Paso 5 — BSC y KPIs", "Step 5 — Scorecard and KPIs")}</h1>
         <p className="mt-1 text-sm text-slate-600">

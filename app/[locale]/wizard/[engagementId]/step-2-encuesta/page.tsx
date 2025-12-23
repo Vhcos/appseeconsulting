@@ -3,7 +3,6 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { Prisma, QuestionSetKind, QuestionType } from "@prisma/client";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
@@ -309,8 +308,6 @@ export default async function Step2EncuestaPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-2-encuesta" />
-
       <div className="mt-4 flex flex-wrap gap-2">
         {miniTabs.map((tab) => (
           <Link

@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
 
@@ -96,12 +95,6 @@ export default async function Step0EngagementPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
-      <WizardStepsNav
-        locale={locale}
-        engagementId={engagementId}
-        currentStep="step-0-engagement"
-      />
-
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -179,8 +178,6 @@ export default async function RisksPage({
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       {/* Para que el “header de pasos” se vea consistente, marcamos Contexto como activo */}
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-0-contexto" />
-
       <div className="mt-2 flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

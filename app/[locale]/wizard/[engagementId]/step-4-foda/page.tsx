@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 
 export const dynamic = "force-dynamic";
 
@@ -63,8 +62,6 @@ export default async function Step4FodaPage({ params }: { params: ParamsPromise 
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-4-foda" />
-
       <header className="mb-6">
         <h1 className="text-xl font-semibold text-slate-900">{t(locale, "FODA", "SWOT")}</h1>
         <p className="mt-1 text-sm text-slate-600">

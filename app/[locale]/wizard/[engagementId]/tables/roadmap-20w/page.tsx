@@ -2,7 +2,6 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 
 export const dynamic = "force-dynamic";
 
@@ -337,8 +336,6 @@ export default async function Roadmap20wPage({
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-7-roadmap" />
-
       <div className="mt-2 flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { getHelpVideo } from "@/lib/see/helpVideos";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +70,6 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       {/* FIX: WizardStepsNav usa currentStep, no activeKey */}
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="tables" />
 
       <div className="mt-4 flex items-start justify-between gap-4">
         <div>

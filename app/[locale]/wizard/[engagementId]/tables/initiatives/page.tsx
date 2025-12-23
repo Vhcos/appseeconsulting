@@ -2,7 +2,6 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import WizardStepsNav from "@/components/see/WizardStepsNav";
 import { BscPerspective } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -216,8 +215,6 @@ export default async function InitiativesPage({
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       {/* Para que el header se sienta “con sentido”, destacamos el paso de Iniciativas */}
-      <WizardStepsNav locale={locale} engagementId={engagementId} currentStep="step-6-portafolio" />
-
       <div className="mt-2 flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

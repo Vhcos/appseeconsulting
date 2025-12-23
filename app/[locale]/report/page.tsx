@@ -4,7 +4,7 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function ReportIndex({
-  params
+  params,
 }: {
   params: Promise<{ locale: string }>;
 }) {
@@ -13,20 +13,23 @@ export default async function ReportIndex({
   const engagements = await prisma.engagement.findMany({
     orderBy: { id: "desc" },
     take: 20,
-    include: { company: true }
+    include: { company: true },
   });
 
   return (
     <main className="mx-auto max-w-4xl p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Reportes</h1>
-        <Link className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50" href={`/${locale}/wizard`}>
+        <Link
+          className="rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+          href={`/${locale}/wizard`}
+        >
           Ir a Wizard
         </Link>
       </div>
 
       <p className="mt-2 text-sm text-gray-600">
-        Vista HTML del reporte (por ahora). El PDF lo generamos después con pipeline serverless.
+        Índice de reportes (admin). Cada reporte abre el informe web del engagement.
       </p>
 
       {engagements.length === 0 ? (
@@ -42,7 +45,12 @@ export default async function ReportIndex({
                     Empresa: {e.company?.name ?? "—"} · Estado: {e.status}
                   </div>
                 </div>
-                <Link className="rounded-lg bg-black px-3 py-2 text-sm text-white hover:opacity-90" href={`/${locale}/report/${e.id}`}>
+
+                {/* ✅ Nuevo link */}
+                <Link
+                  className="rounded-lg bg-black px-3 py-2 text-sm text-white hover:opacity-90"
+                  href={`/${locale}/wizard/${e.id}/report`}
+                >
                   Abrir
                 </Link>
               </div>
