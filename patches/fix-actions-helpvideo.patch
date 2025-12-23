@@ -1,0 +1,48 @@
+*** Begin Patch
+*** Update File: app/[locale]/wizard/[engagementId]/tables/actions/page.tsx
+@@
+-import { getHelpVideo } from "@/lib/see/helpVideos";
++import { getHelpVideo, youtubeEmbedUrl, youtubeWatchUrl } from "@/lib/see/helpVideos";
+@@
+-            <iframe
+-              className="h-full w-full"
+-              src={help.embedUrl}
+-              title={help.title}
+-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+-              allowFullScreen
+-            />
++            {!help.youtubeId ? (
++              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
++                <p className="font-medium text-slate-700">
++                  {t(locale, "Video aún no cargado", "Video not added yet")}
++                </p>
++                <p className="mt-1">
++                  {t(
++                    locale,
++                    "Cuando tengas el link de YouTube, agrega el youtubeId en lib/see/helpVideos.ts (key: actions).",
++                    "When you have the YouTube link, add the youtubeId in lib/see/helpVideos.ts (key: actions)."
++                  )}
++                </p>
++              </div>
++            ) : (
++              <div className="space-y-2">
++                <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-white">
++                  <iframe
++                    className="h-full w-full"
++                    src={youtubeEmbedUrl(help.youtubeId)}
++                    title={help.title}
++                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
++                    allowFullScreen
++                  />
++                </div>
++                <a
++                  className="text-indigo-600 hover:text-indigo-500"
++                  href={youtubeWatchUrl(help.youtubeId)}
++                  target="_blank"
++                  rel="noreferrer"
++                >
++                  {t(locale, "Abrir en YouTube", "Open on YouTube")} {help.eta ? `(${help.eta})` : ""}
++                </a>
++              </div>
++            )}
+*** End Patch

@@ -1,0 +1,151 @@
+diff --git a/.gitignore b/.gitignore
+index 3f8a2b1..b9c9a20 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -31,4 +31,7 @@ node_modules
+ /.next/
+ 
+ # local env
+-.env*
++.env*
++
++# keep env example committed
++!.env.example
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..e5a4cf1
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,20 @@
++# DB (database) - debe empezar con postgresql:// o postgres://
++# Ejemplos:
++# DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?schema=public"
++# DATABASE_URL="postgres://USER:PASSWORD@HOST:5432/DBNAME?schema=public"
++DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?schema=public"
++
++# Modo demo (hasta que tengamos Auth (authentication) + multi-tenant real)
++# Pon aquí IDs (identifiers) reales existentes en tu DB.
++DEMO_ORG_ID=""
++DEMO_COMPANY_ID=""
+diff --git a/lib/prisma.ts b/lib/prisma.ts
+new file mode 100644
+index 0000000..9c9c2bd
+--- /dev/null
++++ b/lib/prisma.ts
+@@ -0,0 +1,24 @@
++import { PrismaClient } from "@prisma/client";
++
++declare global {
++  // eslint-disable-next-line no-var
++  var __prisma: PrismaClient | undefined;
++}
++
++export const prisma =
++  global.__prisma ??
++  new PrismaClient({
++    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
++  });
++
++if (process.env.NODE_ENV !== "production") global.__prisma = prisma;
+diff --git a/app/[locale]/wizard/page.tsx b/app/[locale]/wizard/page.tsx
+index 2f7a4bb..4a5ed38 100644
+--- a/app/[locale]/wizard/page.tsx
++++ b/app/[locale]/wizard/page.tsx
+@@ -1,3 +1,88 @@
+-//app/%5Blocale%5D/wizard/page.tsx
+-export default async function WizardPage() {
+-  return <main style={{ padding: 24 }}><h2>Wizard</h2><p>Placeholder</p></main>;
+-}
++import { prisma } from "@/lib/prisma";
++import { redirect } from "next/navigation";
++
++function requireEnv(name: string): string {
++  const v = process.env[name];
++  if (!v) throw new Error(`Falta variable de entorno: ${name}`);
++  return v;
++}
++
++async function createEngagementAction(formData: FormData) {
++  "use server";
++
++  const name = String(formData.get("name") ?? "").trim();
++  if (!name) return;
++
++  const orgId = requireEnv("DEMO_ORG_ID");
++  const companyId = requireEnv("DEMO_COMPANY_ID");
++
++  await prisma.engagement.create({
++    data: {
++      orgId,
++      companyId,
++      name,
++    },
++  });
++
++  redirect("./wizard");
++}
++
++export default async function WizardPage() {
++  const orgId = process.env.DEMO_ORG_ID;
++  const companyId = process.env.DEMO_COMPANY_ID;
++
++  const canUseDb = Boolean(orgId && companyId);
++
++  const engagements = canUseDb
++    ? await prisma.engagement.findMany({
++        where: { orgId },
++        orderBy: { createdAt: "desc" },
++        take: 50,
++      })
++    : [];
++
++  return (
++    <main style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
++      <h2 style={{ fontSize: 22, fontWeight: 700 }}>Wizard</h2>
++
++      {!canUseDb ? (
++        <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
++          <p style={{ margin: 0 }}>
++            Para activar el modo demo, define <code>DEMO_ORG_ID</code> y{" "}
++            <code>DEMO_COMPANY_ID</code> en tu <code>.env</code> (local) y en Vercel.
++          </p>
++        </div>
++      ) : (
++        <>
++          <form action={createEngagementAction} style={{ marginTop: 16, display: "flex", gap: 8 }}>
++            <input
++              name="name"
++              placeholder="Nombre del Engagement (por ejemplo: Diagnóstico Enero 2026)"
++              style={{
++                flex: 1,
++                padding: "10px 12px",
++                borderRadius: 10,
++                border: "1px solid #ccc",
++              }}
++            />
++            <button
++              type="submit"
++              style={{
++                padding: "10px 14px",
++                borderRadius: 10,
++                border: "1px solid #111",
++                cursor: "pointer",
++              }}
++            >
++              Crear
++            </button>
++          </form>
++
++          <h3 style={{ marginTop: 18, fontSize: 16, fontWeight: 700 }}>Engagements</h3>
++          <ul style={{ paddingLeft: 18, marginTop: 8 }}>
++            {engagements.map((e) => (
++              <li key={e.id}>
++                <strong>{e.name}</strong> — {e.status} — {new Date(e.createdAt).toLocaleString()}
++              </li>
++            ))}
++          </ul>
++        </>
++      )}
++    </main>
++  );
++}

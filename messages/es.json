@@ -1,0 +1,11 @@
+{
+  "nav": { "home": "Inicio", "wizard": "Levantamiento", "report": "Reporte final", "tracking": "Seguimiento" },
+  "home": {
+    "title": "seeconsulting.cl",
+    "subtitle": "Primero levantamos (Wizard). Después generamos el Reporte final (PDF). Y luego hacemos seguimiento semanal/mensual de KPI con alertas."
+  },
+  "wizard": {
+    "title": "Levantamiento",
+    "lead": "Aquí recolectamos la información que sustenta todo lo demás. Sin esto, el reporte y los KPI no se sostienen."
+  }
+}

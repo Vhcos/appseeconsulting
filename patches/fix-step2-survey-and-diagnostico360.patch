@@ -1,0 +1,668 @@
+diff --git a/prisma/seed-internal-survey.ts b/prisma/seed-internal-survey.ts
+index 1111111..2222222 100644
+--- a/prisma/seed-internal-survey.ts
++++ b/prisma/seed-internal-survey.ts
+@@ -1,7 +1,7 @@
+ // prisma/seed-internal-survey.ts
+ // @ts-nocheck
+ 
+ import { PrismaClient, QuestionType, QuestionSetKind } from "@prisma/client";
+ 
+ const prisma = new PrismaClient();
+@@ -117,24 +117,35 @@ async function seedInternalSurvey() 
+   for (const engagement of engagements) {
+-    // QuestionSet por engagement
+-    let qs = await prisma.questionSet.findFirst({
+-      where: {
+-        engagementId: engagement.id,
+-        kind: QuestionSetKind.SURVEY,
+-      },
+-      include: { questions: true },
+-    });
++    // IMPORTANTE:
++    // No usamos "findFirst(kind=SURVEY)" a secas, porque puede existir más de un SURVEY
++    // (ej: sets demo). Buscamos el set específico de la encuesta interna.
++    let qs = await prisma.questionSet.findFirst({
++      where: {
++        engagementId: engagement.id,
++        kind: QuestionSetKind.SURVEY,
++        titleEs: "Encuesta interna",
++        isActive: true,
++      },
++      include: { questions: true },
++    });
+ 
+     if (!qs) {
+       qs = await prisma.questionSet.create({
+         data: {
+           engagementId: engagement.id,
+           kind: QuestionSetKind.SURVEY,
+           order: 1,
+           titleEs: "Encuesta interna",
+           titleEn: "Internal survey",
+           descriptionEs:
+             "Encuesta interna anónima (escala 1–5 y preguntas abiertas) usada para el diagnóstico 360°.",
+           descriptionEn:
+             "Internal anonymous survey (1–5 scale and open questions) used for the 360° diagnosis.",
++          isActive: true,
+         },
+       });
+     }
+ 
+diff --git a/app/[locale]/wizard/[engagementId]/step-2-encuesta/page.tsx b/app/[locale]/wizard/[engagementId]/step-2-encuesta/page.tsx
+index 3333333..4444444 100644
+--- a/app/[locale]/wizard/[engagementId]/step-2-encuesta/page.tsx
++++ b/app/[locale]/wizard/[engagementId]/step-2-encuesta/page.tsx
+@@ -1,11 +1,12 @@
+ import Link from "next/link";
+ import { revalidatePath } from "next/cache";
+ import { prisma } from "@/lib/prisma";
+ import WizardStepsNav from "@/components/see/WizardStepsNav";
+-import { QuestionSetKind, QuestionType } from "@prisma/client";
++import { QuestionSetKind, QuestionType } from "@prisma/client";
++import type { Prisma } from "@prisma/client";
+ 
+ type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+ 
+ function t(locale: string, es: string, en: string) {
+   return locale === "en" ? en : es;
+ }
+@@ -47,6 +48,67 @@ function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
+   }
+ }
+ 
++async function getInternalSurveyQuestionSet(engagementId: string) {
++  // 1) Preferimos el set correcto por título
++  const byTitle = await prisma.questionSet.findFirst({
++    where: {
++      engagementId,
++      kind: QuestionSetKind.SURVEY,
++      titleEs: "Encuesta interna",
++      isActive: true,
++    },
++    include: { questions: { orderBy: { order: "asc" } } },
++  });
++  if (byTitle) return byTitle;
++
++  // 2) Fallback: algún SURVEY que tenga keys B1./B2. (por si el título cambió)
++  const byKeys = await prisma.questionSet.findFirst({
++    where: {
++      engagementId,
++      kind: QuestionSetKind.SURVEY,
++      isActive: true,
++      OR: [
++        { questions: { some: { key: { startsWith: "B1." } } } },
++        { questions: { some: { key: { startsWith: "B2." } } } },
++      ],
++    },
++    include: { questions: { orderBy: { order: "asc" } } },
++  });
++  if (byKeys) return byKeys;
++
++  // 3) Último recurso: cualquier SURVEY activo
++  return prisma.questionSet.findFirst({
++    where: { engagementId, kind: QuestionSetKind.SURVEY, isActive: true },
++    include: { questions: { orderBy: { order: "asc" } } },
++  });
++}
++
+ async function getSurveyAreas(engagementId: string): Promise<string[]> {
+   const wp = await prisma.wizardProgress.findUnique({
+     where: {
+       engagementId_stepKey: { engagementId, stepKey: "survey-areas" },
+     },
+     select: { notes: true },
+   });
+@@ -68,20 +130,18 @@ async function setSurveyAreas(engagementId: string, areas: string[]) {
+   );
+   const stepKey = "survey-areas";
+   const payload = { areas: cleaned };
+   await prisma.wizardProgress.upsert({
+     where: { engagementId_stepKey: { engagementId, stepKey } },
+     update: {
+       notes: JSON.stringify(payload),
+     },
+     create: {
+       engagementId,
+       stepKey,
+       notes: JSON.stringify(payload),
+     },
+   });
+ }
+ 
+ export default async function Step2EncuestaPage({
+   params,
+ }: {
+   params: ParamsPromise;
+ }) {
+   const { locale, engagementId } = await params;
+ 
+-  const questionSet = await prisma.questionSet.findFirst({
+-    where: {
+-      engagementId,
+-      kind: QuestionSetKind.SURVEY,
+-    },
+-    include: {
+-      questions: { orderBy: { order: "asc" } },
+-    },
+-  });
++  const questionSet = await getInternalSurveyQuestionSet(engagementId);
+ 
+   const questions = questionSet?.questions ?? [];
+ 
+-  const [questionCount, answerCount, riskCount, areas] = await Promise.all([
+-    prisma.question.count({
+-      where: { questionSetId: questionSet?.id ?? "___none___" },
+-    }),
+-    prisma.answer.count({ where: { engagementId } }),
++  const questionIds = questions.map((q) => q.id);
++  const [questionCount, answerCount, riskCount, areas] = await Promise.all([
++    Promise.resolve(questions.length),
++    prisma.answer.count({
++      where: { engagementId, ...(questionIds.length ? { questionId: { in: questionIds } } : {}) },
++    }),
+     prisma.risk.count({ where: { engagementId } }),
+     getSurveyAreas(engagementId),
+   ]);
+@@ -135,7 +195,7 @@ export default async function Step2EncuestaPage({
+   async function saveInternalSurvey(formData: FormData) {
+     "use server";
+ 
+     const locale = String(formData.get("locale") ?? "es");
+     const engagementId = String(formData.get("engagementId") ?? "");
+     const respondentCode = String(formData.get("respondentCode") ?? "").trim();
+     const respondentArea = String(formData.get("respondentArea") ?? "").trim();
+ 
+     if (!engagementId || !questionSet) return;
+ 
+-    const answers = questions
+-      .map((q) => {
+-        const raw = formData.get(`q-${q.id}`);
+-        if (raw == null) return null;
+-
+-        if (q.type === QuestionType.SCALE_1_5) {
+-          const s = String(raw).trim();
+-          if (!s) return null;
+-          const n = Number(s);
+-          if (Number.isNaN(n)) return null;
+-
+-          return {
+-            engagementId,
+-            questionId: q.id,
+-            valueJson: {
+-              type: "SCALE_1_5",
+-              value: n,
+-              respondentCode: respondentCode || null,
+-              area: respondentArea || null,
+-            },
+-          };
+-        }
+-
+-        // TEXT
+-        const text = String(raw).trim();
+-        if (!text) return null;
+-
+-        return {
+-          engagementId,
+-          questionId: q.id,
+-          valueJson: {
+-            type: "TEXT",
+-            text,
+-            respondentCode: respondentCode || null,
+-            area: respondentArea || null,
+-          },
+-        };
+-      })
+-      .filter(Boolean) as any[];
++    const answers: Prisma.AnswerCreateManyInput[] = [];
++    for (const q of questions) {
++      const raw = formData.get(`q-${q.id}`);
++      if (raw == null) continue;
++
++      if (q.type === QuestionType.SCALE_1_5) {
++        const s = String(raw).trim();
++        if (!s) continue;
++        const n = Number(s);
++        if (Number.isNaN(n)) continue;
++        const valueJson: Prisma.InputJsonValue = {
++          type: "SCALE_1_5",
++          value: n,
++          respondentCode: respondentCode || null,
++          area: respondentArea || null,
++        };
++        answers.push({ engagementId, questionId: q.id, valueJson });
++        continue;
++      }
++
++      if (q.type === QuestionType.TEXT) {
++        const text = String(raw).trim();
++        if (!text) continue;
++        const valueJson: Prisma.InputJsonValue = {
++          type: "TEXT",
++          text,
++          respondentCode: respondentCode || null,
++          area: respondentArea || null,
++        };
++        answers.push({ engagementId, questionId: q.id, valueJson });
++      }
++    }
+ 
+     if (!answers.length) {
+       revalidatePath(`/${locale}/wizard/${engagementId}/step-2-encuesta`);
+       return;
+     }
+ 
+     await prisma.answer.createMany({
+-      data: answers as any,
++      data: answers,
+     });
+ 
+     revalidatePath(`/${locale}/wizard/${engagementId}/step-2-encuesta`);
+     revalidatePath(`/${locale}/wizard/${engagementId}/step-2-diagnostico-360`);
+   }
+diff --git a/app/[locale]/wizard/[engagementId]/step-2-diagnostico-360/page.tsx b/app/[locale]/wizard/[engagementId]/step-2-diagnostico-360/page.tsx
+index 5555555..6666666 100644
+--- a/app/[locale]/wizard/[engagementId]/step-2-diagnostico-360/page.tsx
++++ b/app/[locale]/wizard/[engagementId]/step-2-diagnostico-360/page.tsx
+@@ -1,229 +1,256 @@
+ import Link from "next/link";
+ import { prisma } from "@/lib/prisma";
+ import WizardStepsNav from "@/components/see/WizardStepsNav";
++import { QuestionSetKind, QuestionType } from "@prisma/client";
+ 
+ type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+ 
+ function t(locale: string, es: string, en: string) {
+   return locale === "en" ? en : es;
+ }
+ 
+-// Preguntas sugeridas del Anexo B — Encuesta interna
+-const surveyQuestions = [
+-  // ...
+-];
++function asObj(v: unknown): Record<string, unknown> | null {
++  return v && typeof v === "object" ? (v as Record<string, unknown>) : null;
++}
++
++function readScale(v: unknown): { value: number | null; area: string | null } {
++  const o = asObj(v);
++  if (!o) return { value: null, area: null };
++  const value = typeof o.value === "number" ? o.value : null;
++  const area = typeof o.area === "string" && o.area.trim() ? o.area.trim() : null;
++  return { value, area };
++}
++
++function readText(v: unknown): { text: string | null; area: string | null } {
++  const o = asObj(v);
++  if (!o) return { text: null, area: null };
++  const text = typeof o.text === "string" && o.text.trim() ? o.text.trim() : null;
++  const area = typeof o.area === "string" && o.area.trim() ? o.area.trim() : null;
++  return { text, area };
++}
+ 
+-export default async function Step2DiagnosticoPage({
++export default async function Step2Diagnostico360Page({
+   params,
+ }: {
+   params: ParamsPromise;
+ }) {
+   const { locale, engagementId } = await params;
+ 
+-  const [questionCount, answerCount, riskCount] = await Promise.all([
+-    prisma.question.count(),
+-    prisma.answer.count(),
+-    prisma.risk.count({ where: { engagementId } }),
+-  ]);
++  const questionSet = await prisma.questionSet.findFirst({
++    where: {
++      engagementId,
++      kind: QuestionSetKind.SURVEY,
++      titleEs: "Encuesta interna",
++      isActive: true,
++    },
++    include: { questions: { orderBy: { order: "asc" } } },
++  });
++
++  const questions = questionSet?.questions ?? [];
++  const scaleQs = questions.filter((q) => q.type === QuestionType.SCALE_1_5);
++  const textQs = questions.filter((q) => q.type === QuestionType.TEXT);
++  const scaleIds = scaleQs.map((q) => q.id);
++  const textIds = textQs.map((q) => q.id);
++  const allIds = questions.map((q) => q.id);
++
++  const [riskCount, answers] = await Promise.all([
++    prisma.risk.count({ where: { engagementId } }),
++    prisma.answer.findMany({
++      where: {
++        engagementId,
++        ...(allIds.length ? { questionId: { in: allIds } } : {}),
++      },
++      select: { questionId: true, valueJson: true, createdAt: true },
++      orderBy: { createdAt: "desc" },
++    }),
++  ]);
++
++  // Agregados escala
++  const agg = new Map<string, { sum: number; n: number }>();
++  const byArea = new Map<string, Map<string, { sum: number; n: number }>>();
++  let totalSum = 0;
++  let totalN = 0;
++
++  for (const a of answers) {
++    if (!scaleIds.includes(a.questionId)) continue;
++    const { value, area } = readScale(a.valueJson);
++    if (value == null) continue;
++    totalSum += value;
++    totalN += 1;
++
++    const cur = agg.get(a.questionId) ?? { sum: 0, n: 0 };
++    cur.sum += value;
++    cur.n += 1;
++    agg.set(a.questionId, cur);
++
++    if (area) {
++      const areaMap = byArea.get(area) ?? new Map<string, { sum: number; n: number }>();
++      const curA = areaMap.get(a.questionId) ?? { sum: 0, n: 0 };
++      curA.sum += value;
++      curA.n += 1;
++      areaMap.set(a.questionId, curA);
++      byArea.set(area, areaMap);
++    }
++  }
++
++  // Respuestas abiertas (últimas 3 por pregunta)
++  const openByQ = new Map<string, string[]>();
++  for (const a of answers) {
++    if (!textIds.includes(a.questionId)) continue;
++    const { text } = readText(a.valueJson);
++    if (!text) continue;
++    const list = openByQ.get(a.questionId) ?? [];
++    if (list.length < 3) list.push(text);
++    openByQ.set(a.questionId, list);
++  }
++
++  const questionCount = questions.length;
++  const answerCount = answers.length;
++  const overallAvg = totalN ? totalSum / totalN : null;
+ 
+   return (
+     <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
+       <WizardStepsNav
+         locale={locale}
+         engagementId={engagementId}
+-        currentStep="step-2-diagnostico"
++        currentStep="step-2-diagnostico-360"
+       />
+ 
+       {/* Header */}
+       <div className="mb-6 flex items-center justify-between gap-4">
+         <div>
+           <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+             {t(locale, "Etapa 2 · Encuesta interna", "Step 2 · Internal survey")}
+           </p>
+           <h1 className="mt-1 text-xl font-semibold text-slate-900">
+             {t(
+               locale,
+-              "Diagnóstico 360° (encuestas internas)",
++              "Diagnóstico 360° (encuestas internas)",
+               "360° diagnosis (internal surveys)",
+             )}
+           </h1>
+           <p className="mt-1 text-sm text-slate-600">
+             {t(
+               locale,
+               "Cruzamos lo que dice el equipo, la gerencia y los datos para identificar brechas clave. Esta etapa se alimenta de la encuesta interna y entrevistas estructuradas.",
+               "We cross what the team, management and data say to identify key gaps. This stage is fed by the internal survey and structured interviews.",
+             )}
+           </p>
+         </div>
+ 
+         <Link
+           href={`/${locale}/wizard/${engagementId}/step-1-data-room`}
+           className="text-xs text-indigo-600 hover:text-indigo-500"
+         >
+           ← {t(locale, "Volver al Data Room", "Back to Data Room")}
+         </Link>
+       </div>
+ 
+       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
++        {!questionSet ? (
++          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-700">
++            {t(
++              locale,
++              "Aún no existe un QuestionSet SURVEY llamado “Encuesta interna” para este engagement. Ejecuta el seed para crearlo.",
++              "There is no SURVEY QuestionSet named “Encuesta interna” for this engagement yet. Run the seed to create it.",
++            )}
++          </div>
++        ) : null}
++
+         {/* Resumen volumetría */}
+         <section className="space-y-3">
+           <p className="text-xs text-slate-600">
+             {t(
+               locale,
+               "El diagnóstico se alimenta de encuestas y entrevistas estructuradas. Abajo ves un resumen del volumen de insumos disponibles.",
+               "The diagnosis is fed by structured surveys and interviews. Below you see a summary of the volume of inputs available.",
+             )}
+           </p>
+ 
+           <div className="grid gap-3 md:grid-cols-3">
+             <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+               <p className="text-[11px] font-medium text-slate-600">
+                 {t(locale, "Preguntas configuradas", "Configured questions")}
+               </p>
+               <p className="mt-1 text-lg font-semibold text-slate-900">
+                 {questionCount}
+               </p>
+               <p className="mt-1 text-[11px] text-slate-500">
+                 {t(
+                   locale,
+                   "Incluye la batería base del Anexo B.",
+                   "Includes the base question set from Annex B.",
+                 )}
+               </p>
+               <Link
+                 href={`/${locale}/wizard/${engagementId}/step-2-encuesta`}
+                 className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-[11px] font-semibold text-white hover:bg-indigo-700"
+               >
+                 {t(locale, "Responder encuesta interna", "Answer internal survey")}
+               </Link>
+             </div>
+ 
+             <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+               <p className="text-[11px] font-medium text-slate-600">
+                 {t(locale, "Respuestas registradas", "Recorded answers")}
+               </p>
+               <p className="mt-1 text-lg font-semibold text-slate-900">
+                 {answerCount}
+               </p>
+               <p className="mt-1 text-[11px] text-slate-500">
+                 {t(
+                   locale,
+                   "Suma de todas las respuestas guardadas (por pregunta).",
+                   "Sum of all stored answers (per question).",
+                 )}
+               </p>
+             </div>
+ 
+             <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+               <div className="flex items-center justify-between gap-2">
+                 <p className="text-[11px] font-medium text-slate-600">
+                   {t(locale, "Riesgos detectados", "Detected risks")}
+                 </p>
+                 <Link
+                   href={`/${locale}/wizard/${engagementId}/tables/risks`}
+                   className="text-[10px] font-medium text-indigo-600 hover:text-indigo-500"
+                 >
+                   {t(locale, "Ver tabla de riesgos", "View risk table")} →
+                 </Link>
+               </div>
+               <p className="mt-1 text-lg font-semibold text-slate-900">
+                 {riskCount}
+               </p>
+               <p className="mt-1 text-[11px] text-slate-500">
+                 {t(
+                   locale,
+                   "Riesgos priorizados a partir de encuestas y entrevistas.",
+                   "Risks prioritized based on surveys and interviews.",
+                 )}
+               </p>
+             </div>
+           </div>
+         </section>
+ 
+-        {/* Encuesta interna (resultado agregado) */}
++        {/* Encuesta interna (resultado agregado real) */}
+         <section className="space-y-3">
+           <div className="flex items-center justify-between gap-3">
+             <div>
+               <h2 className="text-sm font-semibold text-slate-900">
+                 {t(locale, "Encuesta interna", "Internal survey")}
+               </h2>
+               <p className="mt-1 text-xs text-slate-600">
+                 {t(
+                   locale,
+-                  "Resultados agregados de la encuesta anónima al equipo (alineamiento, propuesta de valor, prioridades, HSEC, datos, etc.).",
++                  "Resultados agregados reales desde la tabla Answer (promedios, n y respuestas abiertas).",
+                   "Aggregated results from Answer table (averages, n and open answers).",
+                 )}
+               </p>
+             </div>
+             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] text-slate-600">
+               {t(locale, "Basado en Anexo B", "Based on Annex B")}
+             </span>
+           </div>
+ 
+-          <div className="grid gap-4 md:grid-cols-2">
+-            <div className="space-y-2">
+-              <label className="block text-xs font-medium text-slate-700">
+-                {t(
+-                  locale,
+-                  "Resumen de resultados cuantitativos",
+-                  "Summary of quantitative results",
+-                )}
+-              </label>
+-              <textarea
+-                rows={4}
+-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+-                placeholder={t(
+-                  locale,
+-                  "Ej: 70% percibe que la estrategia no está clara; 60% ve sobrecarga operacional; solo 35% cree que usamos bien los datos.",
+-                  "e.g. 70% perceive unclear strategy; 60% see operational overload; only 35% think we use data well.",
+-                )}
+-                disabled
+-              />
+-            </div>
+-
+-            <div className="space-y-2">
+-              <label className="block text-xs font-medium text-slate-700">
+-                {t(
+-                  locale,
+-                  "Ideas fuerza de respuestas abiertas",
+-                  "Key themes from open-ended answers",
+-                )}
+-              </label>
+-              <textarea
+-                rows={4}
+-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+-                placeholder={t(
+-                  locale,
+-                  "Ej: Falta foco; poca coordinación entre áreas; esfuerzo alto para mantener contratos actuales; dudas sobre visión a 3 años.",
+-                  "e.g. Lack of focus; poor coordination between areas; high effort just to maintain current contracts; doubts about 3-year vision.",
+-                )}
+-                disabled
+-              />
+-            </div>
+-          </div>
++          <div className="rounded-xl border border-slate-200">
++            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
++              <p className="text-xs font-semibold text-slate-700">
++                {t(locale, "Promedios por pregunta (escala 1–5)", "Per-question averages (1–5 scale)")}
++              </p>
++              <p className="text-[11px] text-slate-600">
++                {overallAvg == null
++                  ? t(locale, "Sin datos aún", "No data yet")
++                  : t(locale, `Promedio global: ${overallAvg.toFixed(2)}`, `Overall avg: ${overallAvg.toFixed(2)}`)}
++              </p>
++            </div>
++            <div className="overflow-x-auto">
++              <table className="min-w-full text-left text-xs">
++                <thead className="bg-white">
++                  <tr className="text-[11px] text-slate-500">
++                    <th className="px-3 py-2 font-semibold">{t(locale, "Código", "Code")}</th>
++                    <th className="px-3 py-2 font-semibold">{t(locale, "Pregunta", "Question")}</th>
++                    <th className="px-3 py-2 font-semibold">{t(locale, "Promedio", "Average")}</th>
++                    <th className="px-3 py-2 font-semibold">{t(locale, "n", "n")}</th>
++                  </tr>
++                </thead>
++                <tbody className="divide-y divide-slate-100">
++                  {scaleQs.map((q) => {
++                    const a = agg.get(q.id);
++                    const avg = a?.n ? a.sum / a.n : null;
++                    return (
++                      <tr key={q.id}>
++                        <td className="px-3 py-2 font-mono text-[11px] text-slate-500">{q.key}</td>
++                        <td className="px-3 py-2 text-slate-800">{t(locale, q.promptEs, q.promptEn)}</td>
++                        <td className="px-3 py-2 text-slate-800">{avg == null ? "—" : avg.toFixed(2)}</td>
++                        <td className="px-3 py-2 text-slate-800">{a?.n ?? 0}</td>
++                      </tr>
++                    );
++                  })}
++                </tbody>
++              </table>
++            </div>
++          </div>
++
++          <div className="rounded-xl border border-slate-200">
++            <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
++              <p className="text-xs font-semibold text-slate-700">
++                {t(locale, "Respuestas abiertas (últimas 3 por pregunta)", "Open answers (latest 3 per question)")}
++              </p>
++            </div>
++            <div className="space-y-4 p-3">
++              {textQs.map((q) => {
++                const items = openByQ.get(q.id) ?? [];
++                return (
++                  <div key={q.id}>
++                    <p className="text-xs font-semibold text-slate-900">{t(locale, q.promptEs, q.promptEn)}</p>
++                    {items.length ? (
++                      <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-700">
++                        {items.map((txt, i) => (
++                          <li key={i}>{txt}</li>
++                        ))}
++                      </ul>
++                    ) : (
++                      <p className="mt-1 text-xs text-slate-500">{t(locale, "Sin respuestas aún.", "No answers yet.")}</p>
++                    )}
++                  </div>
++                );
++              })}
++            </div>
++          </div>
+         </section>
+ 
+-        {/* Tabla de preguntas sugeridas (Anexo B) */}
+-        <section className="space-y-3">
+-          ...
+-        </section>
+-
+-        {/* Entrevistas por rol */}
+-        <section className="space-y-3">
+-          ...
+-        </section>
+-
+-        {/* Brechas clave del diagnóstico */}
+-        <section className="space-y-3">
+-          ...
+-        </section>
++        <section className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs text-slate-700">
++          {t(
++            locale,
++            "Entrevistas por rol: todavía no están implementadas como captura estructurada. Si las quieres, lo mejor es crear un QuestionSet tipo INTERVIEW por rol y luego graficar igual que la encuesta.",
++            "Interviews by role: not implemented yet as structured capture. Best approach is a QuestionSet of kind INTERVIEW per role and then chart it like the survey.",
++          )}
++        </section>
+       </div>
+     </div>
+   );
+ }
