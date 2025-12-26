@@ -11,7 +11,7 @@ function t(locale: string, es: string, en: string) {
 type Props = {
   locale: string;
   engagementId: string;
-  currentStep: string;
+  currentStep?: string | null;
 };
 
 type Phase = {
@@ -27,7 +27,6 @@ const PHASES: Phase[] = [
     labelEs: "Kickoff",
     labelEn: "Kickoff",
     steps: [
-      // OJO: Vista general ahora vive en /dashboard (no step-0-contexto)
       { id: "dashboard", labelEs: "Vista general", labelEn: "Overview" },
       { id: "step-0-engagement", labelEs: "Ficha cliente", labelEn: "Client sheet" },
       { id: "step-1-data-room", labelEs: "Data room", labelEn: "Data room" },
@@ -92,6 +91,11 @@ function pill(active: boolean) {
 }
 
 export default function WizardStepsNav({ locale, engagementId, currentStep }: Props) {
+  const stepKey =
+    typeof currentStep === "string" && currentStep.trim().length > 0
+      ? currentStep.trim()
+      : "dashboard";
+
   const pathname = usePathname();
   const router = useRouter();
   const sp = useSearchParams();
@@ -102,33 +106,26 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
   const isTables = pathname.includes(`/wizard/${engagementId}/tables`);
   const isCheckIn = pathname.includes(`/wizard/${engagementId}/check-in`);
   const isOverview = pathname.includes(`/wizard/${engagementId}/dashboard`);
-  const isReport = pathname.includes(`/wizard/${engagementId}/report`); // tu app usa /report (según tu dashboard)
+  const isReport = pathname.includes(`/wizard/${engagementId}/report`);
 
-  // Guardar último step real (solo cliente)
   const storageKey = `see:lastWizardStep:${engagementId}`;
   useEffect(() => {
-    if (currentStep.startsWith("step-")) {
+    if (stepKey.startsWith("step-")) {
       try {
-        localStorage.setItem(storageKey, currentStep);
-      } catch {
-        // ignore
-      }
+        localStorage.setItem(storageKey, stepKey);
+      } catch {}
     }
-  }, [currentStep, storageKey]);
+  }, [stepKey, storageKey]);
 
-  // IMPORTANT: primer render determinístico (evita hydration mismatch)
-  const initialWizardStep = currentStep.startsWith("step-") ? currentStep : "step-0-engagement";
+  const initialWizardStep = stepKey.startsWith("step-") ? stepKey : "step-0-engagement";
   const [wizardStep, setWizardStep] = useState<string>(initialWizardStep);
 
-  // Si estamos en Tablas/Check-in/Dashboard/Report, el botón "Wizard" debe volver al último step
   useEffect(() => {
     if (!isTables && !isCheckIn && !isOverview && !isReport) return;
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved && saved.startsWith("step-")) setWizardStep(saved);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [isTables, isCheckIn, isOverview, isReport, storageKey]);
 
   const wizardHomeHref = useMemo(() => {
@@ -140,7 +137,6 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
   const checkInHref = withAccountId(`/${locale}/wizard/${engagementId}/check-in`, accountId);
   const reportHref = withAccountId(`/${locale}/wizard/${engagementId}/report`, accountId);
 
-  // Unidades desde Plan de cuenta
   const [accountOptions, setAccountOptions] = useState<Array<{ id: string; label: string }>>([]);
   useEffect(() => {
     let alive = true;
@@ -168,10 +164,10 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
   }
 
   const currentPhase =
-    PHASES.find((p) => p.steps.some((s) => s.id === currentStep)) ?? PHASES[0];
+    PHASES.find((p) => p.steps.some((s) => s.id === stepKey)) ?? PHASES[0];
 
   const phaseActive = (id: string) =>
-    id === currentPhase.id && (currentStep.startsWith("step-") || currentStep === "dashboard");
+    id === currentPhase.id && (stepKey.startsWith("step-") || stepKey === "dashboard");
 
   const stepHref = (stepId: string) => {
     if (stepId === "dashboard") return overviewHref;
@@ -180,7 +176,6 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
 
   return (
     <div className="mb-6 space-y-3">
-      {/* Tabs globales + Unidad activa */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Link href={wizardHomeHref} className={pill(!isTables && !isCheckIn && !isOverview && !isReport)}>
@@ -236,7 +231,6 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
         </div>
       </div>
 
-      {/* Fases */}
       <div className="flex flex-wrap gap-2">
         {PHASES.map((p) => (
           <span
@@ -251,11 +245,10 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
         ))}
       </div>
 
-      {/* Pasos de la fase */}
       <div className="flex flex-wrap gap-2">
         {currentPhase.steps.map((s) => {
           const href = stepHref(s.id);
-          const active = s.id === currentStep || (s.id === "dashboard" && isOverview);
+          const active = s.id === stepKey || (s.id === "dashboard" && isOverview);
           return (
             <Link
               key={s.id}
