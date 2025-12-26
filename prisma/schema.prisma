@@ -425,6 +425,11 @@ model KpiValue {
   id    String @id @default(cuid())
   kpiId String
 
+  // “GLOBAL” o el id de la Unidad (AccountPlanRow).
+  scopeKey         String          @default("GLOBAL")
+  accountPlanRowId String?
+  accountPlanRow   AccountPlanRow? @relation(fields: [accountPlanRowId], references: [id], onDelete: SetNull)
+
   periodKey   String
   periodStart DateTime
   periodEnd   DateTime
@@ -441,13 +446,17 @@ model KpiValue {
 
   evidences Evidence[]
 
-  @@unique([kpiId, periodKey])
+  @@unique([kpiId, periodKey, scopeKey])
   @@index([kpiId])
+  @@index([accountPlanRowId])
 }
 
 model Initiative {
   id           String @id @default(cuid())
   engagementId String
+
+  accountPlanRowId String?
+  accountPlanRow   AccountPlanRow? @relation(fields: [accountPlanRowId], references: [id], onDelete: SetNull)
 
   externalId  String?
   title       String
@@ -477,6 +486,7 @@ model Initiative {
 
   @@index([engagementId])
   @@index([kpiId])
+  @@index([accountPlanRowId])
 }
 
 model RaciRow {
@@ -536,6 +546,9 @@ model RoadmapWeek {
   id           String @id @default(cuid())
   engagementId String
 
+  accountPlanRowId String?
+  accountPlanRow   AccountPlanRow? @relation(fields: [accountPlanRowId], references: [id], onDelete: SetNull)
+
   week          String
   objective     String?
   keyActivities String?
@@ -546,6 +559,7 @@ model RoadmapWeek {
   engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 
   @@index([engagementId])
+  @@index([accountPlanRowId])
 }
 
 model ActionItem {
@@ -568,6 +582,9 @@ model UnitEconomicsRow {
   id           String @id @default(cuid())
   engagementId String
 
+  accountPlanRowId String?
+  accountPlanRow   AccountPlanRow? @relation(fields: [accountPlanRowId], references: [id], onDelete: SetNull)
+
   clientSite      String?
   modality        String?
   m2Month         Decimal?
@@ -582,21 +599,27 @@ model UnitEconomicsRow {
   engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 
   @@index([engagementId])
+  @@index([accountPlanRowId])
 }
 
 model AccountPlanRow {
   id           String @id @default(cuid())
   engagementId String
 
-  account        String?
-  goal12m        String?
-  decisionMakers String?
-  competitors    String?
-  mainPain       String?
-  valueProp      String?
-  agenda8w       String?
-  nextStep       String?
-  status         String?
+  account           String?
+  goal12m           String?
+  decisionMakers    String?
+  competitors       String?
+  mainPain          String?
+  valueProp         String?
+  agenda8w          String?
+  nextStep          String?
+  status            String?
+  // Relaciones “Unidad” (faena/obra/centro de costo) → cosas asignables
+  initiatives       Initiative[]
+  roadmapWeeks      RoadmapWeek[]
+  unitEconomicsRows UnitEconomicsRow[]
+  kpiValues         KpiValue[]
 
   engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
 

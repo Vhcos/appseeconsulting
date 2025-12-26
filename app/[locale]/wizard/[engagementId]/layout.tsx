@@ -64,7 +64,7 @@ export default async function WizardEngagementLayout({
 
             <nav className="flex flex-wrap items-center gap-2 text-xs">
               <Link
-                href={`/${locale}/wizard/${engagementId}/step-0-contexto`}
+                href={`/${locale}/wizard/${engagementId}/step-0-engagement`}
                 className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 hover:bg-slate-200"
               >
                 {t(locale, "Vista General", "Overview")}

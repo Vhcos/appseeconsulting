@@ -1,233 +1,273 @@
-import Link from "next/link";
+"use client";
 
-type Params = {
-  locale: string;
-  engagementId: string;
-  currentStep?: string; // ej: "step-4-foda" | "dashboard" | "report" | "check-in"
-};
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 
 function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
-type PhaseId =
-  | "Kickoff"
-  | "Diagnostico"
-  | "Estrategia"
-  | "Portafolio"
-  | "Roadmap"
-  | "Gobernanza"
-  | "Informe"
-  | "Seguimiento";
-
-const PHASES: { id: PhaseId; es: string; en: string }[] = [
-  { id: "Kickoff", es: "Kickoff", en: "Kickoff" },
-  { id: "Diagnostico", es: "Diagnóstico", en: "Diagnosis" },
-  { id: "Estrategia", es: "Estrategia", en: "Strategy" },
-  { id: "Portafolio", es: "Portafolio", en: "Portfolio" },
-  { id: "Roadmap", es: "Roadmap", en: "Roadmap" },
-  { id: "Gobernanza", es: "Gobernanza", en: "Governance" },
-  { id: "Informe", es: "Informe", en: "Report" },
-  { id: "Seguimiento", es: "Seguimiento", en: "Check-in" },
-];
-
-type StepDef = {
-  id: string;
-  index: number;
-  es: string;
-  en: string;
-  phase: PhaseId;
-  href: (locale: string, engagementId: string) => string;
+type Props = {
+  locale: string;
+  engagementId: string;
+  currentStep: string;
 };
 
-const STEPS: StepDef[] = [
-  {
-    id: "step-0-engagement",
-    index: 0,
-    es: "Ficha",
-    en: "Card",
-    phase: "Kickoff",
-    href: (l, e) => `/${l}/wizard/${e}/step-0-engagement`,
-  },
-  {
-    id: "step-1-data-room",
-    index: 1,
-    es: "Data Room",
-    en: "Data Room",
-    phase: "Kickoff",
-    href: (l, e) => `/${l}/wizard/${e}/step-1-data-room`,
-  },
-  {
-    id: "step-2-encuesta",
-    index: 2,
-    es: "Encuestas",
-    en: "Surveys",
-    phase: "Diagnostico",
-    href: (l, e) => `/${l}/wizard/${e}/step-2-encuesta`,
-  },
-  {
-    id: "step-3-estrategia",
-    index: 3,
-    es: "Visión, misión, objetivos",
-    en: "Vision, mission, objectives",
-    phase: "Estrategia",
-    href: (l, e) => `/${l}/wizard/${e}/step-3-estrategia`,
-  },
-  {
-    id: "step-4-foda",
-    index: 4,
-    es: "FODA",
-    en: "SWOT",
-    phase: "Estrategia",
-    href: (l, e) => `/${l}/wizard/${e}/step-4-foda`,
-  },
-  {
-    id: "step-5-bsc",
-    index: 5,
-    es: "BSC",
-    en: "BSC",
-    phase: "Portafolio",
-    href: (l, e) => `/${l}/wizard/${e}/step-5-bsc`,
-  },
-  {
-    id: "step-6-portafolio",
-    index: 6,
-    es: "Iniciativas",
-    en: "Initiatives",
-    phase: "Portafolio",
-    href: (l, e) => `/${l}/wizard/${e}/step-6-portafolio`,
-  },
-  {
-    id: "step-7-roadmap",
-    index: 7,
-    es: "Roadmap",
-    en: "Roadmap",
-    phase: "Roadmap",
-    href: (l, e) => `/${l}/wizard/${e}/step-7-roadmap`,
-  },
-  {
-    id: "step-8-gobernanza",
-    index: 8,
-    es: "Gobernanza",
-    en: "Governance",
-    phase: "Gobernanza",
-    href: (l, e) => `/${l}/wizard/${e}/step-8-gobernanza`,
-  },
-  {
-    id: "step-9-reporte",
-    index: 9,
-    es: "Informe",
-    en: "Report",
-    phase: "Informe",
-    href: (l, e) => `/${l}/wizard/${e}/step-9-reporte`,
-  },
+type Phase = {
+  id: string;
+  labelEs: string;
+  labelEn: string;
+  steps: Array<{ id: string; labelEs: string; labelEn: string }>;
+};
 
-  // Paso 10: operación periódica
+const PHASES: Phase[] = [
   {
-    id: "check-in",
-    index: 10,
-    es: "Check-in",
-    en: "Check-in",
-    phase: "Seguimiento",
-    href: (l, e) => `/${l}/wizard/${e}/check-in`,
+    id: "kickoff",
+    labelEs: "Kickoff",
+    labelEn: "Kickoff",
+    steps: [
+      // OJO: Vista general ahora vive en /dashboard (no step-0-contexto)
+      { id: "dashboard", labelEs: "Vista general", labelEn: "Overview" },
+      { id: "step-0-engagement", labelEs: "Ficha cliente", labelEn: "Client sheet" },
+      { id: "step-1-data-room", labelEs: "Data room", labelEn: "Data room" },
+    ],
+  },
+  {
+    id: "diagnostico",
+    labelEs: "Diagnóstico",
+    labelEn: "Diagnosis",
+    steps: [
+      { id: "step-2-encuesta", labelEs: "Encuesta", labelEn: "Survey" },
+      { id: "step-2-diagnostico-360", labelEs: "360", labelEn: "360" },
+      { id: "step-2b-entrevistas", labelEs: "Entrevistas", labelEn: "Interviews" },
+    ],
+  },
+  {
+    id: "estrategia",
+    labelEs: "Estrategia",
+    labelEn: "Strategy",
+    steps: [
+      { id: "step-3-estrategia", labelEs: "Visión/Misión/Objetivos", labelEn: "Vision/Mission/Objectives" },
+      { id: "step-4-foda", labelEs: "FODA", labelEn: "SWOT" },
+    ],
+  },
+  {
+    id: "bsc",
+    labelEs: "BSC",
+    labelEn: "BSC",
+    steps: [
+      { id: "step-5-bsc", labelEs: "KPIs", labelEn: "KPIs" },
+      { id: "step-6-portafolio", labelEs: "Portafolio", labelEn: "Portfolio" },
+      { id: "step-7-roadmap", labelEs: "Roadmap", labelEn: "Roadmap" },
+    ],
+  },
+  {
+    id: "cierre",
+    labelEs: "Cierre",
+    labelEn: "Close-out",
+    steps: [
+      { id: "step-8-gobernanza", labelEs: "Gobernanza", labelEn: "Governance" },
+      { id: "step-9-reporte", labelEs: "Informe", labelEn: "Report" },
+    ],
   },
 ];
 
-function phaseOf(stepId?: string): PhaseId {
-  if (!stepId) return "Kickoff";
-  if (stepId === "dashboard" || stepId === "report") return "Informe";
-  const s = STEPS.find((x) => x.id === stepId);
-  return s?.phase ?? "Kickoff";
+function withAccountId(href: string, accountId: string | null) {
+  if (!accountId) return href;
+  const glue = href.includes("?") ? "&" : "?";
+  return `${href}${glue}accountId=${encodeURIComponent(accountId)}`;
 }
 
-export default function WizardStepsNav({ locale, engagementId, currentStep }: Params) {
-  const activePhase = phaseOf(currentStep);
+function getAccountId(sp: ReturnType<typeof useSearchParams>) {
+  const raw = sp.get("accountId");
+  return raw && raw.trim() ? raw.trim() : null;
+}
 
-  const firstStepByPhase = (phase: PhaseId) => STEPS.find((s) => s.phase === phase);
+function pill(active: boolean) {
+  return [
+    "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
+    active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+  ].join(" ");
+}
+
+export default function WizardStepsNav({ locale, engagementId, currentStep }: Props) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const sp = useSearchParams();
+  const accountId = getAccountId(sp);
+
+  const unitLabel = t(locale, "Unidad", "Unit");
+
+  const isTables = pathname.includes(`/wizard/${engagementId}/tables`);
+  const isCheckIn = pathname.includes(`/wizard/${engagementId}/check-in`);
+  const isOverview = pathname.includes(`/wizard/${engagementId}/dashboard`);
+  const isReport = pathname.includes(`/wizard/${engagementId}/report`); // tu app usa /report (según tu dashboard)
+
+  // Guardar último step real (solo cliente)
+  const storageKey = `see:lastWizardStep:${engagementId}`;
+  useEffect(() => {
+    if (currentStep.startsWith("step-")) {
+      try {
+        localStorage.setItem(storageKey, currentStep);
+      } catch {
+        // ignore
+      }
+    }
+  }, [currentStep, storageKey]);
+
+  // IMPORTANT: primer render determinístico (evita hydration mismatch)
+  const initialWizardStep = currentStep.startsWith("step-") ? currentStep : "step-0-engagement";
+  const [wizardStep, setWizardStep] = useState<string>(initialWizardStep);
+
+  // Si estamos en Tablas/Check-in/Dashboard/Report, el botón "Wizard" debe volver al último step
+  useEffect(() => {
+    if (!isTables && !isCheckIn && !isOverview && !isReport) return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved && saved.startsWith("step-")) setWizardStep(saved);
+    } catch {
+      // ignore
+    }
+  }, [isTables, isCheckIn, isOverview, isReport, storageKey]);
+
+  const wizardHomeHref = useMemo(() => {
+    return withAccountId(`/${locale}/wizard/${engagementId}/${wizardStep}`, accountId);
+  }, [locale, engagementId, wizardStep, accountId]);
+
+  const overviewHref = withAccountId(`/${locale}/wizard/${engagementId}/dashboard`, accountId);
+  const tablesHref = withAccountId(`/${locale}/wizard/${engagementId}/tables`, accountId);
+  const checkInHref = withAccountId(`/${locale}/wizard/${engagementId}/check-in`, accountId);
+  const reportHref = withAccountId(`/${locale}/wizard/${engagementId}/report`, accountId);
+
+  // Unidades desde Plan de cuenta
+  const [accountOptions, setAccountOptions] = useState<Array<{ id: string; label: string }>>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/engagement/${engagementId}/accounts`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        setAccountOptions(Array.isArray(j?.rows) ? j.rows : []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAccountOptions([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [engagementId]);
+
+  function onUnitChange(next: string) {
+    const params = new URLSearchParams(sp.toString());
+    if (!next) params.delete("accountId");
+    else params.set("accountId", next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  }
+
+  const currentPhase =
+    PHASES.find((p) => p.steps.some((s) => s.id === currentStep)) ?? PHASES[0];
+
+  const phaseActive = (id: string) =>
+    id === currentPhase.id && (currentStep.startsWith("step-") || currentStep === "dashboard");
+
+  const stepHref = (stepId: string) => {
+    if (stepId === "dashboard") return overviewHref;
+    return withAccountId(`/${locale}/wizard/${engagementId}/${stepId}`, accountId);
+  };
 
   return (
-    <div className="w-full">
-      {/* Fases + botones rápidos */}
-      <div className="flex flex-wrap items-center gap-2">
-        {PHASES.map((p) => {
-          const first = firstStepByPhase(p.id);
-          const href = first ? first.href(locale, engagementId) : `/${locale}/wizard/${engagementId}/step-0-contexto`;
-          const isActive = p.id === activePhase;
-
-          return (
-            <Link
-              key={p.id}
-              href={href}
-              className={[
-                "rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                isActive
-                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-              ].join(" ")}
-            >
-              {t(locale, p.es, p.en)}
-            </Link>
-          );
-        })}
-
-        <div className="ml-auto flex items-center gap-2">
-          <Link
-            href={`/${locale}/wizard/${engagementId}/dashboard`}
-            className={[
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition",
-              currentStep === "dashboard"
-                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-            ].join(" ")}
-          >
-            {t(locale, "Panel de control", "Dashboard")}
+    <div className="mb-6 space-y-3">
+      {/* Tabs globales + Unidad activa */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={wizardHomeHref} className={pill(!isTables && !isCheckIn && !isOverview && !isReport)}>
+            {t(locale, "Wizard", "Wizard")}
           </Link>
-
-          <Link
-            href={`/${locale}/wizard/${engagementId}/check-in`}
-            className={[
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition",
-              currentStep === "check-in"
-                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-            ].join(" ")}
-          >
+          <Link href={overviewHref} className={pill(isOverview)}>
+            {t(locale, "Vista general", "Overview")}
+          </Link>
+          <Link href={tablesHref} className={pill(isTables)}>
+            {t(locale, "Tablas", "Tables")}
+          </Link>
+          <Link href={checkInHref} className={pill(isCheckIn)}>
             {t(locale, "Check-in", "Check-in")}
           </Link>
+          <Link href={reportHref} className={pill(isReport)}>
+            {t(locale, "Informe", "Report")}
+          </Link>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="hidden text-xs font-medium text-slate-600 md:inline">
+            {unitLabel}:
+          </span>
+
+          {accountOptions.length === 0 ? (
+            <Link
+              href={withAccountId(`/${locale}/wizard/${engagementId}/tables/account-plan`, accountId)}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {t(locale, "Crear unidades", "Create units")}
+            </Link>
+          ) : (
+            <select
+              value={accountId ?? ""}
+              onChange={(e) => onUnitChange(e.target.value)}
+              className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-800"
+            >
+              <option value="">{t(locale, "Todas", "All")}</option>
+              {accountOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
 
           <Link
-            href={`/${locale}/wizard/${engagementId}/report`}
-            className={[
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition",
-              currentStep === "report"
-                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
-            ].join(" ")}
+            href={withAccountId(`/${locale}/wizard/${engagementId}/tables/account-plan`, accountId)}
+            className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
           >
-            {t(locale, "Informe", "Report")}
+            {t(locale, "Editar unidades", "Edit units")}
           </Link>
         </div>
       </div>
 
-      {/* Steps */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {STEPS.map((s) => {
-          const href = s.href(locale, engagementId);
-          const isActive = s.id === currentStep;
+      {/* Fases */}
+      <div className="flex flex-wrap gap-2">
+        {PHASES.map((p) => (
+          <span
+            key={p.id}
+            className={[
+              "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold",
+              phaseActive(p.id) ? "bg-indigo-600 text-white" : "bg-white text-slate-700 border border-slate-200",
+            ].join(" ")}
+          >
+            {t(locale, p.labelEs, p.labelEn)}
+          </span>
+        ))}
+      </div>
 
+      {/* Pasos de la fase */}
+      <div className="flex flex-wrap gap-2">
+        {currentPhase.steps.map((s) => {
+          const href = stepHref(s.id);
+          const active = s.id === currentStep || (s.id === "dashboard" && isOverview);
           return (
             <Link
               key={s.id}
               href={href}
               className={[
-                "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs transition",
-                isActive
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
+                active
+                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
               ].join(" ")}
             >
-              <span className="text-[10px] font-semibold opacity-80">{s.index}</span>
-              <span>{t(locale, s.es, s.en)}</span>
+              {t(locale, s.labelEs, s.labelEn)}
             </Link>
           );
         })}
