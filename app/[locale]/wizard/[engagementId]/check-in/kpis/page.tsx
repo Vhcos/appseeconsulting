@@ -108,7 +108,7 @@ export default async function CheckInKpisPage({
 
   const existing = ids.length
     ? await prisma.kpiValue.findMany({
-        where: { kpiId: { in: ids }, periodKey: { in: [periodKey, prevKey] } },
+        where: { kpiId: { in: ids }, periodKey: { in: [periodKey, prevKey] }, scopeKey: "GLOBAL" },
         select: { id: true, kpiId: true, periodKey: true, value: true, note: true, isGreen: true },
       })
     : [];
@@ -122,6 +122,8 @@ export default async function CheckInKpisPage({
     const p = String(formData.get("periodKey") ?? "").trim();
     const safePeriod = /^\d{4}-\d{2}$/.test(p) ? p : defaultMonthKey();
     const { start, end } = monthStartEnd(safePeriod);
+    const scopeKey = "GLOBAL";
+
 
     const list = await prisma.kpi.findMany({
       where: { engagementId },
@@ -137,27 +139,31 @@ export default async function CheckInKpisPage({
         const targetNum = k.targetValue ? Number(String(k.targetValue)) : null;
 
         const isGreen = computeIsGreen(k.direction, Number.isFinite(valueNum as number) ? (valueNum as number) : null, targetNum);
-
+        
+        
         await prisma.kpiValue.upsert({
-          where: { kpiId_periodKey: { kpiId: k.id, periodKey: safePeriod } },
-          create: {
-            kpiId: k.id,
-            periodKey: safePeriod,
-            periodStart: start,
-            periodEnd: end,
-            value: rawValue === "" ? null : new Prisma.Decimal(rawValue),
-            note: rawNote || null,
-            isGreen,
-            createdByUserId: null,
-          },
-          update: {
-            periodStart: start,
-            periodEnd: end,
-            value: rawValue === "" ? null : new Prisma.Decimal(rawValue),
-            note: rawNote || null,
-            isGreen,
-          },
-        });
+  where: { kpiId_periodKey_scopeKey: { kpiId: k.id, periodKey: safePeriod, scopeKey } },
+  create: {
+    kpiId: k.id,
+    periodKey: safePeriod,
+    scopeKey, // calza con @@unique([kpiId, periodKey, scopeKey])
+    periodStart: start,
+    periodEnd: end,
+    value: rawValue === "" ? null : new Prisma.Decimal(rawValue),
+    note: rawNote || null,
+    isGreen,
+    createdByUserId: null,
+  },
+  update: {
+    periodStart: start,
+    periodEnd: end,
+    value: rawValue === "" ? null : new Prisma.Decimal(rawValue),
+    note: rawNote || null,
+    isGreen,
+  },
+});
+
+
       }),
     );
 

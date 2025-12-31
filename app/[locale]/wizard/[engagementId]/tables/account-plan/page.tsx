@@ -5,27 +5,58 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+type SearchParamsPromise = Promise<Record<string, string | string[] | undefined>>;
 
 function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
-async function createAccountPlanRowAction(engagementId: string, locale: string, formData: FormData) {
+function readString(
+  sp: Record<string, string | string[] | undefined>,
+  key: string,
+): string | null {
+  const v = sp[key];
+  if (typeof v === "string") return v.trim() || null;
+  if (Array.isArray(v)) return (v[0] ?? "").trim() || null;
+  return null;
+}
+
+function sanitizeSegment(raw: string | null): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (s.includes("/") || s.includes("\\") || s.includes("..")) return null;
+  if (s.length > 120) return null;
+  return s;
+}
+
+function normalizeMaybeNull(v: FormDataEntryValue | null): string | null {
+  const s = String(v ?? "").trim();
+  return s ? s : null;
+}
+
+async function createRow(engagementId: string, locale: string, formData: FormData) {
   "use server";
 
-  const account = String(formData.get("account") ?? "").trim();
-  if (!account) return;
-
-  const notes = String(formData.get("notes") ?? "").trim() || null;
-
   await prisma.accountPlanRow.create({
-    data: { engagementId, account, notes },
+    data: {
+      engagementId,
+      account: normalizeMaybeNull(formData.get("account")),
+      goal12m: normalizeMaybeNull(formData.get("goal12m")),
+      decisionMakers: normalizeMaybeNull(formData.get("decisionMakers")),
+      competitors: normalizeMaybeNull(formData.get("competitors")),
+      mainPain: normalizeMaybeNull(formData.get("mainPain")),
+      valueProp: normalizeMaybeNull(formData.get("valueProp")),
+      agenda8w: normalizeMaybeNull(formData.get("agenda8w")),
+      nextStep: normalizeMaybeNull(formData.get("nextStep")),
+      status: normalizeMaybeNull(formData.get("status")),
+    },
   });
 
   revalidatePath(`/${locale}/wizard/${engagementId}/tables/account-plan`);
 }
 
-async function deleteAccountPlanRowAction(id: string, engagementId: string, locale: string) {
+async function deleteRow(id: string, engagementId: string, locale: string) {
   "use server";
   await prisma.accountPlanRow.delete({ where: { id } });
   revalidatePath(`/${locale}/wizard/${engagementId}/tables/account-plan`);
@@ -36,55 +67,220 @@ export default async function AccountPlanPage({
   searchParams,
 }: {
   params: ParamsPromise;
-  searchParams?: { accountId?: string };
+  searchParams?: SearchParamsPromise;
 }) {
   const { locale, engagementId } = await params;
-  const activeAccountId = (searchParams?.accountId ?? "").trim() || null;
+  const sp = (searchParams ? await searchParams : {}) as Record<string, string | string[] | undefined>;
+
+  const activeAccountId = sanitizeSegment(readString(sp, "accountId"));
 
   const rows = await prisma.accountPlanRow.findMany({
     where: { engagementId },
-    orderBy: [{ account: "asc" }, { id: "asc" }],
+    orderBy: [{ id: "desc" }],
   });
 
   return (
-    <main style={{ padding: 24 }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "baseline", justifyContent: "space-between" }}>
+    <main className="mx-auto max-w-6xl px-4 py-8 lg:px-6">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 style={{ margin: 0 }}>{t(locale, "Plan de cuenta (Unidades)", "Account plan (Units)")}</h2>
-          <p style={{ marginTop: 6, opacity: 0.75 }}>
-            {t(locale, "Define faenas/obras/centros de costo (unidades) para filtrar tablas y check-in.", "Define sites/projects/cost centers (units) to filter tables and check-in.")}
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {t(locale, "Account plan (unidades)", "Account plan (units)")}
+          </p>
+          <h1 className="mt-1 text-xl font-semibold text-slate-900">
+            {t(locale, "Account Plan", "Account Plan")}
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-600">
+            {t(
+              locale,
+              "Una fila = una unidad (faena/obra/cliente). Esto después se usa para asignar iniciativas, roadmap, unit economics y KPI por unidad.",
+              "One row = one unit (site/project/client). Later you can scope initiatives, roadmap, unit economics and KPI per unit.",
+            )}
           </p>
         </div>
-        <Link href={`/${locale}/wizard/${engagementId}/tables`}>{t(locale, "Volver", "Back")}</Link>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/${locale}/wizard/${engagementId}/tables`}
+            className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+          >
+            ← {t(locale, "Volver", "Back")}
+          </Link>
+        </div>
       </div>
 
-      <section style={{ marginTop: 16, padding: 16, border: "1px solid #e5e5e5", borderRadius: 12 }}>
-        <h3 style={{ marginTop: 0 }}>{t(locale, "Nueva unidad", "New unit")}</h3>
+      {activeAccountId && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+          {t(locale, "Unidad activa:", "Active unit:")}{" "}
+          <span className="font-semibold">{activeAccountId}</span>
+          <span className="ml-2 text-slate-500">
+            ({t(locale, "solo referencia por querystring", "just querystring reference")})
+          </span>
+        </div>
+      )}
 
-        <form action={createAccountPlanRowAction.bind(null, engagementId, locale)} style={{ display: "grid", gap: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Nombre", "Name")}</label>
-            <input name="account" required placeholder={t(locale, "Ej: Faena Norte / Obra X / CC-101", "e.g. Site North / Project X / CC-101")} />
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              {t(locale, "Nueva fila", "New row")}
+            </h2>
+            <p className="mt-1 text-xs text-slate-600">
+              {t(
+                locale,
+                "Crea una unidad. Puedes partir con 1 y después agregar.",
+                "Create a unit. Start with 1 and add more later.",
+              )}
+            </p>
+          </div>
+        </div>
+
+        <form action={createRow.bind(null, engagementId, locale)} className="mt-4 grid gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Cuenta / Unidad", "Account / Unit")}
+              </label>
+              <input
+                name="account"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "Ej: Los Bronces", "e.g., Los Bronces")}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Meta 12 meses", "12-month goal")}
+              </label>
+              <input
+                name="goal12m"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "Ej: Renovar + expandir contrato", "e.g., Renew + expand contract")}
+              />
+            </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 10, alignItems: "center" }}>
-            <label>{t(locale, "Notas", "Notes")}</label>
-            <input name="notes" placeholder={t(locale, "Opcional", "Optional")} />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Decisores", "Decision makers")}
+              </label>
+              <textarea
+                name="decisionMakers"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "- Gerente Operaciones\n- Jefe Mantención", "- Operations Manager\n- Maintenance Lead")}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Competidores", "Competitors")}
+              </label>
+              <textarea
+                name="competitors"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10 }}>
-            <button type="submit">{t(locale, "Agregar", "Add")}</button>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Dolor principal", "Main pain")}
+              </label>
+              <textarea
+                name="mainPain"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Propuesta de valor", "Value proposition")}
+              </label>
+              <textarea
+                name="valueProp"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Agenda 8 semanas", "8-week agenda")}
+              </label>
+              <textarea
+                name="agenda8w"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Próximo paso", "Next step")}
+              </label>
+              <textarea
+                name="nextStep"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-900">
+                {t(locale, "Estado", "Status")}
+              </label>
+              <input
+                name="status"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "Ej: Activa / En negociación", "e.g., Active / Negotiating")}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+            >
+              {t(locale, "Guardar fila", "Save row")}
+            </button>
+
+            <span className="ml-auto text-[11px] text-slate-500">
+              {t(locale, "Filas:", "Rows:")} {rows.length}
+            </span>
           </div>
         </form>
       </section>
 
-      <section style={{ marginTop: 16 }}>
-        <div style={{ overflowX: "auto", border: "1px solid #e5e5e5", borderRadius: 12 }}>
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <thead>
-              <tr>
-                {[t(locale, "Unidad", "Unit"), t(locale, "Notas", "Notes"), t(locale, "Activa", "Active"), t(locale, "Acciones", "Actions")].map((h) => (
-                  <th key={h} style={{ textAlign: "left", padding: "10px 12px", borderBottom: "1px solid #eee", whiteSpace: "nowrap", fontWeight: 600 }}>
+      <section className="mt-6">
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-[1100px] border-collapse text-left text-xs">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200">
+                {[
+                  t(locale, "Cuenta", "Account"),
+                  t(locale, "Meta 12m", "12m goal"),
+                  t(locale, "Decisores", "Decision makers"),
+                  t(locale, "Competidores", "Competitors"),
+                  t(locale, "Dolor", "Pain"),
+                  t(locale, "Valor", "Value prop"),
+                  t(locale, "Agenda 8w", "Agenda 8w"),
+                  t(locale, "Próximo", "Next"),
+                  t(locale, "Estado", "Status"),
+                  t(locale, "Acción", "Action"),
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+                  >
                     {h}
                   </th>
                 ))}
@@ -92,36 +288,34 @@ export default async function AccountPlanPage({
             </thead>
 
             <tbody>
-              {rows.map((r) => {
-                const isActive = activeAccountId === r.id;
-                const setActiveHref = `/${locale}/wizard/${engagementId}/tables/account-plan?accountId=${encodeURIComponent(r.id)}`;
-
-                return (
-                  <tr key={r.id} style={isActive ? { background: "#f1f5f9" } : undefined}>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 220 }}>
-                      {r.account}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", minWidth: 260 }}>
-                      {r.notes ?? ""}
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
-                      <Link href={setActiveHref} style={{ textDecoration: "underline" }}>
-                        {isActive ? t(locale, "Sí", "Yes") : t(locale, "Usar", "Use")}
-                      </Link>
-                    </td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f3f3f3", whiteSpace: "nowrap" }}>
-                      <form action={deleteAccountPlanRowAction.bind(null, r.id, engagementId, locale)} style={{ display: "inline" }}>
-                        <button type="submit" style={{ cursor: "pointer" }}>{t(locale, "Eliminar", "Delete")}</button>
-                      </form>
-                    </td>
-                  </tr>
-                );
-              })}
+              {rows.map((r, idx) => (
+                <tr key={r.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                  <td className="min-w-[160px] px-3 py-2 align-top text-[11px] text-slate-900">{r.account ?? ""}</td>
+                  <td className="min-w-[160px] px-3 py-2 align-top text-[11px] text-slate-700">{r.goal12m ?? ""}</td>
+                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.decisionMakers ?? ""}</td>
+                  <td className="min-w-[150px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.competitors ?? ""}</td>
+                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.mainPain ?? ""}</td>
+                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.valueProp ?? ""}</td>
+                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.agenda8w ?? ""}</td>
+                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.nextStep ?? ""}</td>
+                  <td className="min-w-[120px] px-3 py-2 align-top text-[11px] text-slate-700">{r.status ?? ""}</td>
+                  <td className="px-3 py-2 align-top text-[11px]">
+                    <form action={deleteRow.bind(null, r.id, engagementId, locale)}>
+                      <button
+                        type="submit"
+                        className="text-[11px] font-semibold text-slate-600 hover:text-rose-600"
+                      >
+                        {t(locale, "Eliminar", "Delete")}
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
 
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={4} style={{ padding: 16, opacity: 0.7 }}>
-                    {t(locale, "Aún no hay unidades. Crea al menos 1 para poder filtrar.", "No units yet. Create at least 1 to filter.")}
+                  <td colSpan={10} className="px-4 py-6 text-sm text-slate-500">
+                    {t(locale, "Aún no hay filas. Crea la primera unidad.", "No rows yet. Create the first unit.")}
                   </td>
                 </tr>
               )}

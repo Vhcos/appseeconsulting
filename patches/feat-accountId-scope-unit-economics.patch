@@ -1,0 +1,134 @@
+*** Begin Patch
+*** Update File: app/[locale]/wizard/[engagementId]/tables/unit-economics/page.tsx
+@@
+ export const dynamic = "force-dynamic";
+ 
+ type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+ type SearchParamsPromise = Promise<Record<string, string | string[] | undefined>>;
+@@
+ function sanitizeSegment(raw: string | null): string | null {
+   if (!raw) return null;
+   const s = raw.trim();
+   if (!s) return null;
+   if (s.includes("/") || s.includes("\\") || s.includes("..")) return null;
+   if (s.length > 80) return null;
+   return s;
+ }
+ 
++function sanitizeAccountId(raw: string | null): string | null {
++  if (!raw) return null;
++  const s = raw.trim();
++  if (!s) return null;
++  if (s.includes("/") || s.includes("\\") || s.includes("..")) return null;
++  if (s.length > 120) return null;
++  return s;
++}
++
++function withAccountId(href: string, accountId: string | null) {
++  if (!accountId) return href;
++  const glue = href.includes("?") ? "&" : "?";
++  return `${href}${glue}accountId=${encodeURIComponent(accountId)}`;
++}
++
+ function inferFromReferer(ref: string | null, locale: string, engagementId: string): string | null {
+   if (!ref) return null;
+@@
+ function fmtDecimal(d: Prisma.Decimal | null | undefined, digits = 2) {
+@@
+ }
+ 
+ async function createUE(engagementId: string, locale: string, formData: FormData) {
+   "use server";
+ 
++  const accountIdRaw = String(formData.get("accountId") ?? "").trim();
++  const accountPlanRowId = accountIdRaw ? accountIdRaw : null;
++
+   const clientSite = normalizeMaybeNull(formData.get("clientSite"));
+   const modality = normalizeMaybeNull(formData.get("modality"));
+@@
+   await prisma.unitEconomicsRow.create({
+     data: {
+       engagementId,
++      accountPlanRowId,
+       clientSite,
+       modality,
+       m2Month,
+       priceUsdM2,
+       revenueUsdMonth,
+       directCosts,
+       margin,
+       marginPct,
+       risks,
+       evidence,
+     },
+   });
+ 
+   revalidatePath(`/${locale}/wizard/${engagementId}/tables/unit-economics`);
+ }
+@@
+ export default async function UnitEconomicsPage({
+   params,
+   searchParams,
+ }: {
+   params: ParamsPromise;
+   searchParams?: SearchParamsPromise;
+ }) {
+   const { locale, engagementId } = await params;
+   const sp = (searchParams ? await searchParams : {}) as Record<string, string | string[] | undefined>;
+ 
++  const accountId = sanitizeAccountId(readString(sp, "accountId"));
++
+   const fromParam = sanitizeSegment(readString(sp, "from"));
+   const fromRef = sanitizeSegment(inferFromReferer((await headers()).get("referer"), locale, engagementId));
+   const from = fromParam || fromRef || "tables";
+ 
+   const backHref =
+     from && from !== "tables"
+-      ? `/${locale}/wizard/${engagementId}/${from}`
+-      : `/${locale}/wizard/${engagementId}/tables`;
++      ? withAccountId(`/${locale}/wizard/${engagementId}/${from}`, accountId)
++      : withAccountId(`/${locale}/wizard/${engagementId}/tables`, accountId);
+ 
+   const navStep = mapToNavStep(from);
+ 
+   const rows = await prisma.unitEconomicsRow.findMany({
+-    where: { engagementId },
++    where: {
++      engagementId,
++      ...(accountId ? { accountPlanRowId: accountId } : {}),
++    },
+     orderBy: [{ id: "desc" }],
+   });
+@@
+         <div className="flex items-center gap-2">
+           <Link
+             href={backHref}
+             className="text-xs font-medium text-indigo-600 hover:text-indigo-500"
+           >
+             ← {t(locale, "Volver", "Back")}
+           </Link>
+         </div>
+       </div>
+ 
+       <div className="mt-6">
++        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700">
++          <span className="font-semibold">{t(locale, "Unidad:", "Unit:")}</span>
++          <span>
++            {accountId ? `${accountId.slice(0, 10)}…` : t(locale, "Todas", "All")}
++          </span>
++        </div>
+       </div>
+@@
+         <form action={createUE.bind(null, engagementId, locale)} className="mt-4 grid gap-4">
++          <input type="hidden" name="accountId" value={accountId ?? ""} />
+           <div className="grid gap-4 md:grid-cols-2">
+@@
+           <Link
+-            href={`/${locale}/wizard/${engagementId}/tables`}
++            href={withAccountId(`/${locale}/wizard/${engagementId}/tables`, accountId)}
+             className="text-xs font-medium text-slate-700 hover:text-slate-900"
+           >
+             {t(locale, "Ver todas las tablas", "View all tables")}
+           </Link>
+         </div>
+*** End Patch

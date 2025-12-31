@@ -1,0 +1,179 @@
+*** Begin Patch
+*** Update File: app/[locale]/wizard/[engagementId]/tables/roadmap-20w/page.tsx
+@@
+ export const dynamic = "force-dynamic";
+ 
+ type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+ type SearchParams = Record<string, string | string[] | undefined>;
+ type SearchParamsPromise = Promise<SearchParams>;
+@@
+ function sanitizeSegment(raw: string): string {
+   const s = (raw ?? "").trim();
+   if (!s) return "";
+   if (!/^[a-zA-Z0-9\-]+$/.test(s)) return "";
+   return s;
+ }
+ 
++function sanitizeAccountId(raw: string): string {
++  const s = (raw ?? "").trim();
++  if (!s) return "";
++  if (s.includes("/") || s.includes("\\") || s.includes("..")) return "";
++  if (s.length > 120) return "";
++  return s;
++}
++
++function withAccountId(href: string, accountId: string) {
++  if (!accountId) return href;
++  const glue = href.includes("?") ? "&" : "?";
++  return `${href}${glue}accountId=${encodeURIComponent(accountId)}`;
++}
++
+ function inferFromReferer(
+   referer: string | null,
+   locale: string,
+   engagementId: string
+@@
+ export default async function Roadmap20wPage({
+   params,
+   searchParams,
+ }: {
+   params: ParamsPromise;
+   searchParams?: SearchParams | SearchParamsPromise;
+ }) {
+   const { locale, engagementId } = await params;
+   const sp = (searchParams ? await searchParams : {}) as SearchParams;
+ 
++  const accountId = sanitizeAccountId(readString(sp, "accountId"));
++  const scopeAccountId = accountId ? accountId : null;
++
+   const fromParam = sanitizeSegment(readString(sp, "from"));
+   const fromRef = sanitizeSegment(
+     inferFromReferer((await headers()).get("referer"), locale, engagementId)
+   );
+   const from = fromParam || fromRef || "step-7-roadmap";
+ 
+   const backHref =
+     from === "tables"
+-      ? `/${locale}/wizard/${engagementId}/tables`
+-      : `/${locale}/wizard/${engagementId}/${from}`;
++      ? withAccountId(`/${locale}/wizard/${engagementId}/tables`, accountId)
++      : withAccountId(`/${locale}/wizard/${engagementId}/${from}`, accountId);
+@@
+   const clientName =
+     (engagement.contextCompanyName && engagement.contextCompanyName.trim()) ||
+     (engagement.name && engagement.name.trim()) ||
+     t(locale, "Cliente", "Client");
+ 
+-  // Auto-seed: si NO hay semanas todavía, creamos la plantilla 1–20
+-  const existingCount = await prisma.roadmapWeek.count({ where: { engagementId } });
++  // Auto-seed: plantilla 1–20 por unidad (accountPlanRowId). Si no hay unidad => roadmap "global" (null).
++  const existingCount = await prisma.roadmapWeek.count({
++    where: { engagementId, accountPlanRowId: scopeAccountId },
++  });
+   if (existingCount === 0) {
+     await prisma.roadmapWeek.createMany({
+-      data: ROADMAP_TEMPLATE.map((w) => ({
+-        engagementId,
+-        week: w.week,
+-        objective: w.objective,
+-        keyActivities: w.keyActivities,
+-        deliverables: w.deliverables,
+-        kpiFocus: w.kpiFocus,
+-        ritual: w.ritual,
+-      })),
++      data: ROADMAP_TEMPLATE.map((w) => {
++        return {
++          engagementId,
++          accountPlanRowId: scopeAccountId,
++          week: w.week,
++          objective: w.objective,
++          keyActivities: w.keyActivities,
++          deliverables: w.deliverables,
++          kpiFocus: w.kpiFocus,
++          ritual: w.ritual,
++        };
++      }),
+     });
+   }
+ 
+   async function upsertWeek(formData: FormData) {
+     "use server";
+ 
++    const accountIdRaw = String(formData.get("accountId") ?? "").trim();
++    const accountPlanRowId = accountIdRaw ? accountIdRaw : null;
++
+     const week = String(formData.get("week") ?? "").trim();
+     if (!week) return;
+@@
+     const existing = await prisma.roadmapWeek.findFirst({
+-      where: { engagementId, week },
++      where: { engagementId, week, accountPlanRowId },
+       select: { id: true },
+     });
+ 
+     if (existing) {
+       await prisma.roadmapWeek.update({
+         where: { id: existing.id },
+         data: { objective, keyActivities, deliverables, kpiFocus, ritual },
+       });
+     } else {
+       await prisma.roadmapWeek.create({
+-        data: { engagementId, week, objective, keyActivities, deliverables, kpiFocus, ritual },
++        data: { engagementId, accountPlanRowId, week, objective, keyActivities, deliverables, kpiFocus, ritual },
+       });
+     }
+ 
+     revalidatePath(`/${locale}/wizard/${engagementId}/tables/roadmap-20w`);
+     revalidatePath(`/${locale}/wizard/${engagementId}/step-7-roadmap`);
+   }
+ 
+   const weeks = await prisma.roadmapWeek.findMany({
+-    where: { engagementId },
++    where: { engagementId, accountPlanRowId: scopeAccountId },
+     orderBy: [{ week: "asc" }],
+   });
+@@
+         <div className="flex flex-col items-end gap-2">
+           <Link className="text-sm text-indigo-600 hover:underline" href={backHref}>
+             ← {t(locale, "Volver", "Back")}
+           </Link>
+ 
+           <Link
+             className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+-            href={`/${locale}/wizard/${engagementId}/tables`}
++            href={withAccountId(`/${locale}/wizard/${engagementId}/tables`, accountId)}
+           >
+             {t(locale, "Ver todas las tablas", "See all tables")}
+           </Link>
+         </div>
+       </div>
+ 
++      <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] text-slate-700">
++        <span className="font-semibold">{t(locale, "Unidad:", "Unit:")}</span>
++        <span>
++          {accountId ? `${accountId.slice(0, 10)}…` : t(locale, "Todas", "All")}
++        </span>
++      </div>
++
+       {/* Video (placeholder) */}
+       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+@@
+       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+@@
+         </div>
+ 
+         <form action={upsertWeek} className="mt-4 grid gap-4 md:grid-cols-2">
++          <input type="hidden" name="accountId" value={accountId} />
+           <div>
+             <label className="text-xs font-semibold text-slate-800">
+               {t(locale, "Semana", "Week")}
+             </label>
+@@
+             <Link
+               className="inline-flex items-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+-              href={`/${locale}/wizard/${engagementId}/step-7-roadmap`}
++              href={withAccountId(`/${locale}/wizard/${engagementId}/step-7-roadmap`, accountId)}
+             >
+               {t(locale, "Ir al Step Roadmap", "Go to Roadmap step")}
+             </Link>
+*** End Patch

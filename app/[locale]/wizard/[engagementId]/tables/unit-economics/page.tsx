@@ -29,7 +29,7 @@ function sanitizeSegment(raw: string | null): string | null {
   const s = raw.trim();
   if (!s) return null;
   if (s.includes("/") || s.includes("\\") || s.includes("..")) return null;
-  if (s.length > 80) return null;
+  if (s.length > 120) return null;
   return s;
 }
 
@@ -48,14 +48,6 @@ function inferFromReferer(ref: string | null, locale: string, engagementId: stri
   if (seg.startsWith("step-")) return seg;
 
   return null;
-}
-
-function mapToNavStep(from: string | null): string {
-  if (!from) return "step-0-engagement";
-  if (from === "step-0-contexto") return "step-0-engagement";
-  if (from === "step-2-encuesta" || from === "step-2b-entrevistas") return "step-2-diagnostico-360";
-  if (from.startsWith("step-")) return from;
-  return "step-0-engagement";
 }
 
 function normalizeMaybeNull(v: FormDataEntryValue | null): string | null {
@@ -97,6 +89,18 @@ function fmtDecimal(d: Prisma.Decimal | null | undefined, digits = 2) {
 async function createUE(engagementId: string, locale: string, formData: FormData) {
   "use server";
 
+  const accountId = normalizeMaybeNull(formData.get("accountId"));
+
+  // Validación suave: si viene accountId, que exista y sea del engagement
+  let accountPlanRowId: string | null = null;
+  if (accountId) {
+    const ok = await prisma.accountPlanRow.findFirst({
+      where: { id: accountId, engagementId },
+      select: { id: true },
+    });
+    if (ok) accountPlanRowId = ok.id;
+  }
+
   const clientSite = normalizeMaybeNull(formData.get("clientSite"));
   const modality = normalizeMaybeNull(formData.get("modality"));
 
@@ -118,6 +122,7 @@ async function createUE(engagementId: string, locale: string, formData: FormData
   await prisma.unitEconomicsRow.create({
     data: {
       engagementId,
+      accountPlanRowId,
       clientSite,
       modality,
       m2Month,
@@ -136,7 +141,8 @@ async function createUE(engagementId: string, locale: string, formData: FormData
 
 async function deleteUE(id: string, engagementId: string, locale: string) {
   "use server";
-  await prisma.unitEconomicsRow.delete({ where: { id } });
+  // Más seguro que delete({where:{id}}) por si alguien intenta borrar cross-engagement
+  await prisma.unitEconomicsRow.deleteMany({ where: { id, engagementId } });
   revalidatePath(`/${locale}/wizard/${engagementId}/tables/unit-economics`);
 }
 
@@ -154,15 +160,36 @@ export default async function UnitEconomicsPage({
   const fromRef = sanitizeSegment(inferFromReferer((await headers()).get("referer"), locale, engagementId));
   const from = fromParam || fromRef || "tables";
 
+  const accountIdParam = sanitizeSegment(readString(sp, "accountId"));
+
+  const accounts = await prisma.accountPlanRow.findMany({
+    where: { engagementId },
+    select: { id: true, account: true },
+    orderBy: [{ account: "asc" }, { id: "asc" }],
+  });
+
+  const accountIdIsValid = accountIdParam ? accounts.some((a) => a.id === accountIdParam) : false;
+
+  // Default: primera unidad si existe; si no, queda null (sin scope)
+  const selectedAccountId = accountIdIsValid
+    ? (accountIdParam as string)
+    : (accounts[0]?.id ?? null);
+
+  const selectedAccountLabel =
+    selectedAccountId
+      ? (accounts.find((a) => a.id === selectedAccountId)?.account?.trim() || t(locale, "Unidad sin nombre", "Unnamed unit"))
+      : t(locale, "Sin unidad", "No unit");
+
   const backHref =
     from && from !== "tables"
-      ? `/${locale}/wizard/${engagementId}/${from}`
-      : `/${locale}/wizard/${engagementId}/tables`;
+      ? `/${locale}/wizard/${engagementId}/${from}${selectedAccountId ? `?accountId=${encodeURIComponent(selectedAccountId)}` : ""}`
+      : `/${locale}/wizard/${engagementId}/tables${selectedAccountId ? `?accountId=${encodeURIComponent(selectedAccountId)}` : ""}`;
 
-  const navStep = mapToNavStep(from);
+  const whereScope: any = { engagementId };
+  if (selectedAccountId) whereScope.accountPlanRowId = selectedAccountId;
 
   const rows = await prisma.unitEconomicsRow.findMany({
-    where: { engagementId },
+    where: whereScope,
     orderBy: [{ id: "desc" }],
   });
 
@@ -186,6 +213,67 @@ export default async function UnitEconomicsPage({
               "This helps you understand if a contract is profitable and why. Fill it with reasonable estimates—no one is auditing you here.",
             )}
           </p>
+
+          {/* Selector de unidad */}
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-900">
+                  {t(locale, "Unidad (scope)", "Unit (scope)")}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {t(
+                    locale,
+                    "Este Unit Economics queda guardado por unidad (AccountPlanRow).",
+                    "This Unit Economics is saved per unit (AccountPlanRow).",
+                  )}
+                </p>
+              </div>
+
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-700">
+                {t(locale, "Seleccionada:", "Selected:")} {selectedAccountLabel}
+              </span>
+            </div>
+
+            {accounts.length > 0 ? (
+              <form method="get" className="mt-3 flex flex-wrap items-end gap-2">
+                <input type="hidden" name="from" value={from === "tables" ? "tables" : from} />
+                <label className="text-xs font-semibold text-slate-900">
+                  {t(locale, "Cambiar unidad", "Change unit")}
+                </label>
+                <select
+                  name="accountId"
+                  defaultValue={selectedAccountId ?? ""}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                >
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.account?.trim() || t(locale, "Unidad sin nombre", "Unnamed unit")}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="inline-flex items-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                >
+                  {t(locale, "Aplicar", "Apply")}
+                </button>
+              </form>
+            ) : (
+              <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-xs text-slate-700">
+                <p className="font-medium text-slate-900">
+                  {t(locale, "Aún no hay unidades creadas.", "No units created yet.")}
+                </p>
+                <p className="mt-1 text-slate-600">
+                  {t(
+                    locale,
+                    "Crea al menos 1 unidad (AccountPlanRow) para que esta tabla quede ordenada por faena/obra/centro de costo.",
+                    "Create at least 1 unit (AccountPlanRow) so this table is organized by site/project/cost center.",
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -196,9 +284,6 @@ export default async function UnitEconomicsPage({
             ← {t(locale, "Volver", "Back")}
           </Link>
         </div>
-      </div>
-
-      <div className="mt-6">
       </div>
 
       {/* Bloque video */}
@@ -289,7 +374,7 @@ export default async function UnitEconomicsPage({
           </div>
 
           <Link
-            href={`/${locale}/wizard/${engagementId}/tables`}
+            href={`/${locale}/wizard/${engagementId}/tables${selectedAccountId ? `?accountId=${encodeURIComponent(selectedAccountId)}` : ""}`}
             className="text-xs font-medium text-slate-700 hover:text-slate-900"
           >
             {t(locale, "Ver todas las tablas", "View all tables")}
@@ -297,6 +382,8 @@ export default async function UnitEconomicsPage({
         </div>
 
         <form action={createUE.bind(null, engagementId, locale)} className="mt-4 grid gap-4">
+          <input type="hidden" name="accountId" value={selectedAccountId ?? ""} />
+
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-900">
@@ -482,7 +569,7 @@ export default async function UnitEconomicsPage({
             </button>
 
             <Link
-              href={`/${locale}/wizard/${engagementId}/tables`}
+              href={`/${locale}/wizard/${engagementId}/tables${selectedAccountId ? `?accountId=${encodeURIComponent(selectedAccountId)}` : ""}`}
               className="inline-flex items-center rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200"
             >
               {t(locale, "Ver todas las tablas", "View all tables")}

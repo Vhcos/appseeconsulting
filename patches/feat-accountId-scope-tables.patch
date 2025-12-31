@@ -1,0 +1,91 @@
+*** Begin Patch
+*** Update File: app/[locale]/wizard/[engagementId]/tables/page.tsx
+@@
+ /* eslint-disable @typescript-eslint/no-explicit-any */
+ import Link from "next/link";
+ import { prisma } from "@/lib/prisma";
+ 
+ export const dynamic = "force-dynamic";
+ 
+ type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
++type SearchParams = Record<string, string | string[] | undefined>;
+ 
+ function t(locale: string, es: string, en: string) {
+   return locale === "en" ? en : es;
+ }
+ 
+-export default async function TablesHome({ params }: { params: ParamsPromise }) {
++function readString(sp: SearchParams, key: string): string | null {
++  const v = sp[key];
++  if (typeof v === "string") return v.trim() || null;
++  if (Array.isArray(v)) return (v[0] ?? "").trim() || null;
++  return null;
++}
++
++function sanitizeAccountId(raw: string | null): string | null {
++  if (!raw) return null;
++  const s = raw.trim();
++  if (!s) return null;
++  if (s.includes("/") || s.includes("\\") || s.includes("..")) return null;
++  if (s.length > 120) return null;
++  return s;
++}
++
++function withAccountId(href: string, accountId: string | null) {
++  if (!accountId) return href;
++  const glue = href.includes("?") ? "&" : "?";
++  return `${href}${glue}accountId=${encodeURIComponent(accountId)}`;
++}
++
++export default async function TablesHome({
++  params,
++  searchParams,
++}: {
++  params: ParamsPromise;
++  searchParams?: SearchParams;
++}) {
+   const { locale, engagementId } = await params;
++  const sp = (searchParams ?? {}) as SearchParams;
++  const accountId = sanitizeAccountId(readString(sp, "accountId"));
+ 
+   const engagement = await prisma.engagement.findUnique({
+     where: { id: engagementId },
+     select: { id: true, name: true },
+@@
+       </main>
+     );
+   }
+ 
+   const links: Array<{ href: string; es: string; en: string }> = [
+-    { href: `/${locale}/wizard/${engagementId}/tables/initiatives`, es: "Iniciativas", en: "Initiatives" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/risks`, es: "Riesgos", en: "Risks" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/decisions`, es: "Decisiones", en: "Decisions" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/roadmap-20w`, es: "Roadmap 20 semanas", en: "20-week roadmap" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/actions`, es: "Action items", en: "Action items" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/raci`, es: "RACI (Responsible, Accountable, Consulted, Informed)", en: "RACI (Responsible, Accountable, Consulted, Informed)" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/unit-economics`, es: "Unit economics", en: "Unit economics" },
+-    { href: `/${locale}/wizard/${engagementId}/tables/account-plan`, es: "Account Plan (Plan de cuenta)", en: "Account Plan" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/initiatives`, accountId), es: "Iniciativas", en: "Initiatives" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/risks`, accountId), es: "Riesgos", en: "Risks" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/decisions`, accountId), es: "Decisiones", en: "Decisions" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/roadmap-20w`, accountId), es: "Roadmap 20 semanas", en: "20-week roadmap" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/actions`, accountId), es: "Action items", en: "Action items" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/raci`, accountId), es: "RACI (Responsible, Accountable, Consulted, Informed)", en: "RACI (Responsible, Accountable, Consulted, Informed)" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/unit-economics`, accountId), es: "Unit economics", en: "Unit economics" },
++    { href: withAccountId(`/${locale}/wizard/${engagementId}/tables/account-plan`, accountId), es: "Account Plan (Plan de cuenta)", en: "Account Plan" },
+   ];
+ 
+   return (
+     <main style={{ padding: 24 }}>
+@@
+         </div>
+ 
+-        <Link href={`/${locale}/wizard/${engagementId}`}>{t(locale, "Volver", "Back")}</Link>
++        <Link href={withAccountId(`/${locale}/wizard/${engagementId}`, accountId)}>
++          {t(locale, "Volver", "Back")}
++        </Link>
+       </div>
+ 
+       <section style={{ marginTop: 16, padding: 16, border: "1px solid #e5e5e5", borderRadius: 12 }}>
+         <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 2 }}>
+*** End Patch

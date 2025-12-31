@@ -1,3 +1,4 @@
+//components/see/WizardStepsNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -117,7 +118,14 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
     }
   }, [stepKey, storageKey]);
 
-  const initialWizardStep = stepKey.startsWith("step-") ? stepKey : "step-0-engagement";
+  const safeCurrentStep =
+  typeof currentStep === "string" && currentStep.trim() ? currentStep : "step-0-engagement";
+
+// IMPORTANT: primer render determinístico
+const initialWizardStep = safeCurrentStep.startsWith("step-")
+  ? safeCurrentStep
+  : "step-0-engagement";
+
   const [wizardStep, setWizardStep] = useState<string>(initialWizardStep);
 
   useEffect(() => {

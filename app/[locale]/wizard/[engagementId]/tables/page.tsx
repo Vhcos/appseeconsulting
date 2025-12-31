@@ -1,3 +1,5 @@
+//app/%5Blocale%5D/wizard/%5BengagementId%5D/tables/page.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
