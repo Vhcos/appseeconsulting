@@ -1,4 +1,4 @@
-//components/see/WizardStepsNav.tsx
+// components/see/WizardStepsNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -28,7 +28,6 @@ const PHASES: Phase[] = [
     labelEs: "Kickoff",
     labelEn: "Kickoff",
     steps: [
-      { id: "dashboard", labelEs: "Vista general", labelEn: "Overview" },
       { id: "step-0-engagement", labelEs: "Ficha cliente", labelEn: "Client sheet" },
       { id: "step-1-data-room", labelEs: "Data room", labelEn: "Data room" },
     ],
@@ -68,7 +67,7 @@ const PHASES: Phase[] = [
     labelEn: "Close-out",
     steps: [
       { id: "step-8-gobernanza", labelEs: "Gobernanza", labelEn: "Governance" },
-      { id: "step-9-reporte", labelEs: "Informe", labelEn: "Report" },
+      { id: "step-9-reporte", labelEs: "Estado del informe", labelEn: "Report status" },
     ],
   },
 ];
@@ -84,19 +83,19 @@ function getAccountId(sp: ReturnType<typeof useSearchParams>) {
   return raw && raw.trim() ? raw.trim() : null;
 }
 
-function pill(active: boolean) {
-  return [
-    "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
-    active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200",
-  ].join(" ");
+function inferStepFromPathname(pathname: string, engagementId: string): string | null {
+  const marker = `/wizard/${engagementId}/`;
+  const i = pathname.indexOf(marker);
+  if (i === -1) return null;
+
+  const rest = pathname.slice(i + marker.length);
+  const seg = rest.split("/")[0] ?? "";
+
+  if (seg.startsWith("step-")) return seg;
+  return null; // tables/check-in/report/dashboard => no es step
 }
 
 export default function WizardStepsNav({ locale, engagementId, currentStep }: Props) {
-  const stepKey =
-    typeof currentStep === "string" && currentStep.trim().length > 0
-      ? currentStep.trim()
-      : "dashboard";
-
   const pathname = usePathname();
   const router = useRouter();
   const sp = useSearchParams();
@@ -104,46 +103,43 @@ export default function WizardStepsNav({ locale, engagementId, currentStep }: Pr
 
   const unitLabel = t(locale, "Unidad", "Unit");
 
-  const isTables = pathname.includes(`/wizard/${engagementId}/tables`);
-  const isCheckIn = pathname.includes(`/wizard/${engagementId}/check-in`);
-  const isOverview = pathname.includes(`/wizard/${engagementId}/dashboard`);
-  const isReport = pathname.includes(`/wizard/${engagementId}/report`);
+  const pathStep = useMemo(
+    () => inferStepFromPathname(pathname, engagementId),
+    [pathname, engagementId]
+  );
+
+  const stepKeyFromProps =
+    typeof currentStep === "string" && currentStep.trim().length > 0 ? currentStep.trim() : null;
 
   const storageKey = `see:lastWizardStep:${engagementId}`;
-  useEffect(() => {
-    if (stepKey.startsWith("step-")) {
-      try {
-        localStorage.setItem(storageKey, stepKey);
-      } catch {}
-    }
-  }, [stepKey, storageKey]);
 
-  const safeCurrentStep =
-  typeof currentStep === "string" && currentStep.trim() ? currentStep : "step-0-engagement";
-
-// IMPORTANT: primer render determinístico
-const initialWizardStep = safeCurrentStep.startsWith("step-")
-  ? safeCurrentStep
-  : "step-0-engagement";
+  const initialWizardStep =
+    (pathStep && pathStep.startsWith("step-") ? pathStep : null) ??
+    (stepKeyFromProps && stepKeyFromProps.startsWith("step-") ? stepKeyFromProps : null) ??
+    "step-0-engagement";
 
   const [wizardStep, setWizardStep] = useState<string>(initialWizardStep);
 
+  // Step actual para pintar fases/steps (si no estás en step, usamos “último step visitado”)
+  const navStepKey = pathStep ?? (stepKeyFromProps ?? wizardStep);
+
+  // Guardar último step visitado
   useEffect(() => {
-    if (!isTables && !isCheckIn && !isOverview && !isReport) return;
+    if (navStepKey.startsWith("step-")) {
+      try {
+        localStorage.setItem(storageKey, navStepKey);
+      } catch {}
+    }
+  }, [navStepKey, storageKey]);
+
+  // Si estás en rutas que NO son step, recupera último step
+  useEffect(() => {
+    if (pathStep) return;
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved && saved.startsWith("step-")) setWizardStep(saved);
     } catch {}
-  }, [isTables, isCheckIn, isOverview, isReport, storageKey]);
-
-  const wizardHomeHref = useMemo(() => {
-    return withAccountId(`/${locale}/wizard/${engagementId}/${wizardStep}`, accountId);
-  }, [locale, engagementId, wizardStep, accountId]);
-
-  const overviewHref = withAccountId(`/${locale}/wizard/${engagementId}/dashboard`, accountId);
-  const tablesHref = withAccountId(`/${locale}/wizard/${engagementId}/tables`, accountId);
-  const checkInHref = withAccountId(`/${locale}/wizard/${engagementId}/check-in`, accountId);
-  const reportHref = withAccountId(`/${locale}/wizard/${engagementId}/report`, accountId);
+  }, [pathStep, storageKey]);
 
   const [accountOptions, setAccountOptions] = useState<Array<{ id: string; label: string }>>([]);
   useEffect(() => {
@@ -171,42 +167,25 @@ const initialWizardStep = safeCurrentStep.startsWith("step-")
     router.replace(qs ? `${pathname}?${qs}` : pathname);
   }
 
+  const stepHref = (stepId: string) =>
+    withAccountId(`/${locale}/wizard/${engagementId}/${stepId}`, accountId);
+
   const currentPhase =
-    PHASES.find((p) => p.steps.some((s) => s.id === stepKey)) ?? PHASES[0];
+    PHASES.find((p) => p.steps.some((s) => s.id === navStepKey)) ?? PHASES[0];
 
   const phaseActive = (id: string) =>
-    id === currentPhase.id && (stepKey.startsWith("step-") || stepKey === "dashboard");
-
-  const stepHref = (stepId: string) => {
-    if (stepId === "dashboard") return overviewHref;
-    return withAccountId(`/${locale}/wizard/${engagementId}/${stepId}`, accountId);
-  };
+    id === currentPhase.id && navStepKey.startsWith("step-");
 
   return (
-    <div className="mb-6 space-y-3">
+    <div className="mb-3 space-y-3">
+      {/* Línea compacta: Unidad */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href={wizardHomeHref} className={pill(!isTables && !isCheckIn && !isOverview && !isReport)}>
-            {t(locale, "Wizard", "Wizard")}
-          </Link>
-          <Link href={overviewHref} className={pill(isOverview)}>
-            {t(locale, "Vista general", "Overview")}
-          </Link>
-          <Link href={tablesHref} className={pill(isTables)}>
-            {t(locale, "Tablas", "Tables")}
-          </Link>
-          <Link href={checkInHref} className={pill(isCheckIn)}>
-            {t(locale, "Check-in", "Check-in")}
-          </Link>
-          <Link href={reportHref} className={pill(isReport)}>
-            {t(locale, "Informe", "Report")}
-          </Link>
+        <div className="text-[11px] font-medium text-slate-500">
+          {t(locale, "Navegación del wizard", "Wizard navigation")}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="hidden text-xs font-medium text-slate-600 md:inline">
-            {unitLabel}:
-          </span>
+          <span className="hidden text-xs font-medium text-slate-600 md:inline">{unitLabel}:</span>
 
           {accountOptions.length === 0 ? (
             <Link
@@ -239,28 +218,35 @@ const initialWizardStep = safeCurrentStep.startsWith("step-")
         </div>
       </div>
 
+      {/* Fases (clickeables) */}
       <div className="flex flex-wrap gap-2">
-        {PHASES.map((p) => (
-          <span
-            key={p.id}
-            className={[
-              "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold",
-              phaseActive(p.id) ? "bg-indigo-600 text-white" : "bg-white text-slate-700 border border-slate-200",
-            ].join(" ")}
-          >
-            {t(locale, p.labelEs, p.labelEn)}
-          </span>
-        ))}
+        {PHASES.map((p) => {
+          const first = p.steps[0]?.id ?? "step-0-engagement";
+          return (
+            <Link
+              key={p.id}
+              href={stepHref(first)}
+              className={[
+                "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition-colors",
+                phaseActive(p.id)
+                  ? "bg-indigo-600 text-white"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+              ].join(" ")}
+            >
+              {t(locale, p.labelEs, p.labelEn)}
+            </Link>
+          );
+        })}
       </div>
 
+      {/* Steps dentro de la fase actual */}
       <div className="flex flex-wrap gap-2">
         {currentPhase.steps.map((s) => {
-          const href = stepHref(s.id);
-          const active = s.id === stepKey || (s.id === "dashboard" && isOverview);
+          const active = s.id === navStepKey;
           return (
             <Link
               key={s.id}
-              href={href}
+              href={stepHref(s.id)}
               className={[
                 "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
                 active

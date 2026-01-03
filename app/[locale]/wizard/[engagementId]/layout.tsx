@@ -1,6 +1,9 @@
+//app/%5Blocale%5D/wizard/%5BengagementId%5D/layout.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import WizardStepsNavAuto from "@/components/see/WizardStepsNavAuto";
+import WizardProgress10 from "@/components/see/WizardProgress10";
+
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +67,7 @@ export default async function WizardEngagementLayout({
 
             <nav className="flex flex-wrap items-center gap-2 text-xs">
               <Link
-                href={`/${locale}/wizard/${engagementId}/step-0-engagement`}
+                href={`/${locale}/wizard/${engagementId}/dashboard`}
                 className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 hover:bg-slate-200"
               >
                 {t(locale, "Vista General", "Overview")}
@@ -88,7 +91,7 @@ export default async function WizardEngagementLayout({
                 href={`/${locale}/wizard/${engagementId}/report`}
                 className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 hover:bg-slate-200"
               >
-                {t(locale, "Informe", "Report")}
+                {t(locale, "Informe final", "Final report")}
               </Link>
 
               <Link
@@ -105,6 +108,7 @@ export default async function WizardEngagementLayout({
         <div className="border-t border-slate-200">
           <div className="mx-auto max-w-6xl px-4 py-3 lg:px-6">
             <WizardStepsNavAuto locale={locale} engagementId={engagementId} />
+            <WizardProgress10 locale={locale} engagementId={engagementId} />
           </div>
         </div>
       </header>

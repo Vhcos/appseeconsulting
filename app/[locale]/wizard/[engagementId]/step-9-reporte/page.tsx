@@ -1,3 +1,4 @@
+//app/%5Blocale%5D/wizard/%5BengagementId%5D/step-9-reporte/page.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
@@ -63,12 +64,12 @@ export default async function Step9ReportePage({ params }: { params: ParamsPromi
     <div className="mx-auto max-w-5xl px-4 py-8 lg:px-0">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">{t(locale, "Informe final", "Final report")}</h1>
+          <h1 className="text-xl font-semibold text-slate-900">{t(locale, "Estado del informe", "Report status")}</h1>
           <p className="mt-1 text-sm text-slate-600">
             {t(
-              locale,
-              "En este último paso cerramos el informe ejecutivo que resume todo el proceso: diagnóstico, estrategia, portafolio, roadmap y gobernanza.",
-              "In this last step we close the executive report that sums up the whole process: diagnosis, strategy, portfolio, roadmap and governance."
+                locale,
+                 "Revisa qué secciones ya tienen datos y cuáles están pendientes antes de abrir el informe final. Esto evita sorpresas al imprimir o generar PDF.",
+                 "Check which sections already have data and which are still pending before opening the final report. This avoids surprises when exporting to PDF."
             )}
           </p>
         </div>
@@ -80,7 +81,7 @@ export default async function Step9ReportePage({ params }: { params: ParamsPromi
 
       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold text-slate-900">{t(locale, "Estado de las secciones del informe", "Report sections status")}</h2>
+          <h2 className="text-sm font-semibold text-slate-900">{t(locale, "Checklist del informe", "Report checklist")}</h2>
           <p className="text-xs text-slate-600">
             {t(
               locale,
@@ -138,7 +139,7 @@ export default async function Step9ReportePage({ params }: { params: ParamsPromi
             href={`/${locale}/wizard/${engagementId}/report`}
             className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-medium text-white hover:bg-indigo-500"
           >
-            {t(locale, "Abrir informe final →", "Open final report →")}
+            {t(locale, "Abrir informe final (PDF) →", "Open final report (PDF) →")}
           </Link>
         </section>
 

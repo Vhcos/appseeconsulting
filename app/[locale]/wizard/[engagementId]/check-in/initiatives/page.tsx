@@ -1,17 +1,26 @@
-// app/[locale]/wizard/[engagementId]/check-in/initiatives/page.tsx
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import CheckInNav from "@/components/see/CheckInNav";
 import { BscPerspective } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
-type SearchParamsPromise = Promise<{ period?: string }>;
+type SearchParamsPromise = Promise<{ period?: string; accountId?: string }>;
 
 function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
+}
+
+function sanitizeSegment(raw: string | null): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s) return null;
+  if (s.includes("/") || s.includes("\\") || s.includes("..")) return null;
+  if (s.length > 120) return null;
+  return s;
 }
 
 function perspectiveLabel(locale: string, p: BscPerspective) {
@@ -30,8 +39,8 @@ function defaultMonthKey(d = new Date()) {
   return `${y}-${m}`;
 }
 
-function stepKey(periodKey: string) {
-  return `checkin-initiatives:${periodKey}`;
+function stepKey(periodKey: string, scopeKey: string) {
+  return `checkin-initiatives:${scopeKey}:${periodKey}`;
 }
 
 function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
@@ -70,6 +79,33 @@ function parseUrls(raw: string): string[] {
     .filter(Boolean);
 }
 
+function btnSoft() {
+  return [
+    "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
+    "bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50",
+    "transition-all active:scale-[0.98]",
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+  ].join(" ");
+}
+
+function btnPrimary() {
+  return [
+    "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
+    "bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 ring-1 ring-indigo-600/10",
+    "transition-all active:scale-[0.98]",
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+  ].join(" ");
+}
+
+function btnDark() {
+  return [
+    "inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold",
+    "bg-slate-900 text-white shadow-sm hover:bg-slate-700 ring-1 ring-slate-900/10",
+    "transition-all active:scale-[0.98]",
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+  ].join(" ");
+}
+
 export default async function CheckInInitiativesPage({
   params,
   searchParams,
@@ -82,9 +118,12 @@ export default async function CheckInInitiativesPage({
 
   const periodKey = sp.period && /^\d{4}-\d{2}$/.test(sp.period) ? sp.period : defaultMonthKey();
 
+  const activeAccountId = sanitizeSegment(sp.accountId ?? null);
+  const scopeKey = activeAccountId ? `UNIT:${activeAccountId}` : "GLOBAL";
+
   const engagement = await prisma.engagement.findUnique({
     where: { id: engagementId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
 
   if (!engagement) {
@@ -98,14 +137,18 @@ export default async function CheckInInitiativesPage({
     );
   }
 
+  const whereInit = activeAccountId
+    ? { engagementId, OR: [{ accountPlanRowId: activeAccountId }, { accountPlanRowId: null }] }
+    : { engagementId };
+
   const initiatives = await prisma.initiative.findMany({
-    where: { engagementId },
+    where: whereInit,
     select: { id: true, title: true, perspective: true, owner: true, status: true, notes: true },
     orderBy: [{ perspective: "asc" }, { title: "asc" }],
   });
 
   const wp = await prisma.wizardProgress.findUnique({
-    where: { engagementId_stepKey: { engagementId, stepKey: stepKey(periodKey) } },
+    where: { engagementId_stepKey: { engagementId, stepKey: stepKey(periodKey, scopeKey) } },
     select: { notes: true },
   });
 
@@ -117,6 +160,10 @@ export default async function CheckInInitiativesPage({
 
     const p = String(formData.get("periodKey") ?? "").trim();
     const safePeriod = /^\d{4}-\d{2}$/.test(p) ? p : defaultMonthKey();
+
+    const accRaw = String(formData.get("accountId") ?? "").trim();
+    const safeAccountId = sanitizeSegment(accRaw || null);
+    const scopeKey = safeAccountId ? `UNIT:${safeAccountId}` : "GLOBAL";
 
     const ids = formData.getAll("initiativeId").map(String).filter(Boolean);
 
@@ -132,7 +179,6 @@ export default async function CheckInInitiativesPage({
       const progressPct = progressRaw ? toPct(progressRaw) : null;
       const evidenceUrls = urlsRaw ? parseUrls(urlsRaw) : [];
 
-      // 1) dejamos estado "actual" en Initiative (último estado)
       await prisma.initiative.update({
         where: { id },
         data: {
@@ -141,13 +187,12 @@ export default async function CheckInInitiativesPage({
         },
       });
 
-      // 2) evidencias: se guardan como Evidence ligada a initiativeId (histórico real)
       if (evidenceUrls.length) {
         await prisma.evidence.createMany({
           data: evidenceUrls.map((url) => ({
             initiativeId: id,
             url,
-            label: `[${safePeriod}]`,
+            label: `[${safePeriod}] ${scopeKey}`,
           })),
         });
       }
@@ -155,12 +200,11 @@ export default async function CheckInInitiativesPage({
       items.push({ initiativeId: id, progressPct, status, notes, blockers, evidenceUrls });
     }
 
-    // 3) snapshot por período: WizardProgress
     await prisma.wizardProgress.upsert({
-      where: { engagementId_stepKey: { engagementId, stepKey: stepKey(safePeriod) } },
+      where: { engagementId_stepKey: { engagementId, stepKey: stepKey(safePeriod, scopeKey) } },
       create: {
         engagementId,
-        stepKey: stepKey(safePeriod),
+        stepKey: stepKey(safePeriod, scopeKey),
         completedAt: new Date(),
         notes: JSON.stringify({ items } satisfies InitiativeSnapshot),
       },
@@ -170,11 +214,21 @@ export default async function CheckInInitiativesPage({
       },
     });
 
+    revalidatePath(`/${locale}/wizard/${engagementId}/check-in`);
     revalidatePath(`/${locale}/wizard/${engagementId}/check-in/initiatives`);
     revalidatePath(`/${locale}/wizard/${engagementId}/check-in/summary`);
     revalidatePath(`/${locale}/wizard/${engagementId}/dashboard`);
-    redirect(`/${locale}/wizard/${engagementId}/check-in/initiatives?period=${safePeriod}`);
+
+    const qs = new URLSearchParams();
+    qs.set("period", safePeriod);
+    if (safeAccountId) qs.set("accountId", safeAccountId);
+    redirect(`/${locale}/wizard/${engagementId}/check-in/initiatives?${qs.toString()}`);
   }
+
+  const qsBase = new URLSearchParams();
+  qsBase.set("period", periodKey);
+  if (activeAccountId) qsBase.set("accountId", activeAccountId);
+  const baseQs = qsBase.toString();
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
@@ -182,41 +236,53 @@ export default async function CheckInInitiativesPage({
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              {t(locale, "Check-in iniciativas", "Initiatives check-in")}
+              {t(locale, "Check-in · Iniciativas", "Check-in · Initiatives")}
             </p>
             <h1 className="mt-1 text-lg font-semibold text-slate-900">
-              {t(locale, "Período:", "Period:")} {periodKey}
+              {engagement.name || t(locale, "Engagement", "Engagement")}
             </h1>
             <p className="mt-1 text-xs text-slate-600">
+              {t(locale, "Período:", "Period:")} <span className="font-semibold">{periodKey}</span>
+              {" · "}
+              {t(locale, "Scope:", "Scope:")}{" "}
+              <span className="font-semibold">{activeAccountId ? t(locale, "Unidad", "Unit") : "GLOBAL"}</span>
+            </p>
+            <p className="mt-2 text-xs text-slate-600">
               {t(
                 locale,
-                "Guardamos estado actual en Initiative y el historial del período en WizardProgress. Evidencias quedan en Evidence.",
-                "We store current state in Initiative and period history in WizardProgress. Evidences go to Evidence.",
+                "Tip: registra progreso, bloqueos y evidencias. Luego revisa el Resumen.",
+                "Tip: log progress, blockers and evidence. Then review the Summary."
               )}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/${locale}/wizard/${engagementId}/check-in?period=${periodKey}`}
-              className="inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50"
-            >
-              ← {t(locale, "Volver", "Back")}
+            <Link href={`/${locale}/wizard/${engagementId}/check-in?${baseQs}`} className={btnSoft()}>
+              ← {t(locale, "Inicio", "Home")}
             </Link>
-            <Link
-              href={`/${locale}/wizard/${engagementId}/check-in/summary?period=${periodKey}`}
-              className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
-            >
+
+            <Link href={`/${locale}/wizard/${engagementId}/check-in/kpis?${baseQs}`} className={btnSoft()}>
+              {t(locale, "Volver a KPIs", "Back to KPIs")}
+            </Link>
+
+            <Link href={`/${locale}/wizard/${engagementId}/check-in/summary?${baseQs}`} className={btnPrimary()}>
               {t(locale, "Ver resumen →", "View summary →")}
             </Link>
           </div>
         </div>
 
+        <div className="mt-4">
+          <CheckInNav locale={locale} engagementId={engagementId} />
+        </div>
+
         {initiatives.length === 0 ? (
-          <p className="mt-6 text-xs text-slate-600">{t(locale, "No hay iniciativas creadas aún.", "No initiatives yet.")}</p>
+          <p className="mt-6 text-xs text-slate-600">
+            {t(locale, "No hay iniciativas creadas aún.", "No initiatives yet.")}
+          </p>
         ) : (
           <form action={save} className="mt-6 space-y-4">
             <input type="hidden" name="periodKey" value={periodKey} />
+            <input type="hidden" name="accountId" value={activeAccountId ?? ""} />
 
             <div className="grid gap-3">
               {initiatives.map((it) => {
@@ -234,9 +300,11 @@ export default async function CheckInInitiativesPage({
                           {it.owner ? ` · ${it.owner}` : ""}
                         </div>
                         {(snap?.progressPct != null || snap?.status) && (
-                          <div className="mt-1 text-[11px] text-slate-600">
+                          <div className="mt-2 text-[11px] text-slate-600">
                             {t(locale, "Último check-in:", "Last check-in:")}{" "}
-                            {snap?.progressPct != null ? `${snap.progressPct}%` : "—"}
+                            <span className="font-semibold">
+                              {snap?.progressPct != null ? `${snap.progressPct}%` : "—"}
+                            </span>
                             {snap?.status ? ` · ${snap.status}` : ""}
                           </div>
                         )}
@@ -245,11 +313,13 @@ export default async function CheckInInitiativesPage({
 
                     <div className="mt-3 grid gap-2 md:grid-cols-6">
                       <div className="md:col-span-1">
-                        <label className="block text-[11px] font-semibold text-slate-700">{t(locale, "Progreso %", "Progress %")}</label>
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          {t(locale, "Progreso %", "Progress %")}
+                        </label>
                         <input
                           name={`progress_${it.id}`}
                           defaultValue={snap?.progressPct != null ? String(snap.progressPct) : ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                           placeholder="0–100"
                         />
                       </div>
@@ -259,7 +329,7 @@ export default async function CheckInInitiativesPage({
                         <input
                           name={`status_${it.id}`}
                           defaultValue={snap?.status ?? it.status ?? ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                           placeholder={t(locale, "Ej: En curso / Bloqueada / Lista", "e.g. In progress / Blocked / Done")}
                         />
                       </div>
@@ -269,30 +339,36 @@ export default async function CheckInInitiativesPage({
                         <input
                           name={`notes_${it.id}`}
                           defaultValue={snap?.notes ?? it.notes ?? ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                           placeholder={t(locale, "Qué se avanzó, qué falta…", "What changed, what's next…")}
                         />
                       </div>
 
                       <div className="md:col-span-6">
-                        <label className="block text-[11px] font-semibold text-slate-700">{t(locale, "Bloqueos", "Blockers")}</label>
+                        <label className="block text-[11px] font-semibold text-slate-700">
+                          {t(locale, "Bloqueos", "Blockers")}
+                        </label>
                         <input
                           name={`blockers_${it.id}`}
                           defaultValue={snap?.blockers ?? ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                           placeholder={t(locale, "Dependencias, aprobaciones, data faltante…", "Dependencies, approvals, missing data…")}
                         />
                       </div>
 
                       <div className="md:col-span-6">
                         <label className="block text-[11px] font-semibold text-slate-700">
-                          {t(locale, "Evidencias (URLs, separadas por coma o salto de línea)", "Evidence (URLs, comma or newline separated)")}
+                          {t(
+                            locale,
+                            "Evidencias (URLs, separadas por coma o salto de línea)",
+                            "Evidence (URLs, comma or newline separated)"
+                          )}
                         </label>
                         <textarea
                           name={`evidence_${it.id}`}
                           rows={2}
                           defaultValue={snap?.evidenceUrls?.length ? snap.evidenceUrls.join("\n") : ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                           placeholder="https://..."
                         />
                       </div>
@@ -302,11 +378,12 @@ export default async function CheckInInitiativesPage({
               })}
             </div>
 
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                className="inline-flex items-center rounded-full bg-slate-900 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-700"
-              >
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link href={`/${locale}/wizard/${engagementId}/check-in/summary?${baseQs}`} className={btnPrimary()}>
+                {t(locale, "Siguiente: Resumen →", "Next: Summary →")}
+              </Link>
+
+              <button type="submit" className={btnDark()}>
                 {t(locale, "Guardar iniciativas", "Save initiatives")}
               </button>
             </div>
