@@ -72,30 +72,42 @@ function toNum(x: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function btnSoft() {
+function btnBase() {
   return [
     "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
-    "bg-white text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50",
-    "transition-all active:scale-[0.98]",
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+    "transition-all",
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2",
+    "active:scale-[0.98] active:translate-y-[1px]",
+  ].join(" ");
+}
+
+function btnSoft() {
+  return [
+    btnBase(),
+    "bg-white text-slate-900",
+    "ring-2 ring-slate-300",
+    "hover:bg-slate-50 hover:ring-slate-400 hover:shadow-sm",
+    "active:bg-slate-100 active:ring-slate-500 active:shadow-none",
   ].join(" ");
 }
 
 function btnPrimary() {
   return [
-    "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
-    "bg-indigo-600 text-white shadow-sm hover:bg-indigo-500 ring-1 ring-indigo-600/10",
-    "transition-all active:scale-[0.98]",
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+    btnBase(),
+    "bg-indigo-600 text-white",
+    "ring-2 ring-indigo-600/40",
+    "hover:bg-indigo-500 hover:ring-indigo-500/60 hover:shadow-sm",
+    "active:bg-indigo-700 active:ring-indigo-700/60 active:shadow-none",
   ].join(" ");
 }
 
 function btnDark() {
   return [
-    "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
-    "bg-slate-900 text-white shadow-sm hover:bg-slate-700 ring-1 ring-slate-900/10",
-    "transition-all active:scale-[0.98]",
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+    btnBase(),
+    "bg-slate-900 text-white",
+    "ring-2 ring-slate-900/30",
+    "hover:bg-slate-800 hover:ring-slate-900/45 hover:shadow-sm",
+    "active:bg-slate-950 active:ring-slate-950/45 active:shadow-none",
   ].join(" ");
 }
 
@@ -171,7 +183,9 @@ export default async function CheckInSummaryPage({
   const prevById = new Map(prevInit.items.map((x) => [x.initiativeId, x]));
 
   // Mapear id -> título (para que el resumen se entienda)
-  const initIds = Array.from(new Set([...curInit.items.map((x) => x.initiativeId), ...prevInit.items.map((x) => x.initiativeId)]));
+  const initIds = Array.from(
+    new Set([...curInit.items.map((x) => x.initiativeId), ...prevInit.items.map((x) => x.initiativeId)]),
+  );
   const initTitles = initIds.length
     ? await prisma.initiative.findMany({
         where: { id: { in: initIds } },
@@ -248,6 +262,8 @@ export default async function CheckInSummaryPage({
   if (activeAccountId) qsBase.set("accountId", activeAccountId);
   const baseQs = qsBase.toString();
 
+  const dataPackHref = `/${locale}/wizard/${engagementId}/check-in/data-pack?${baseQs}`;
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -280,6 +296,12 @@ export default async function CheckInSummaryPage({
             <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
               {t(locale, "Iniciativas", "Initiatives")}
             </Link>
+
+            {/* CTA NUEVO: Data Pack (sin romper tus botones) */}
+            <Link href={dataPackHref} className={btnPrimary()}>
+              {t(locale, "Data Pack", "Data Pack")}
+            </Link>
+
             <Link href={`/${locale}/wizard/${engagementId}/report?${baseQs}`} className={btnDark()}>
               {t(locale, "Ver informe", "View report")}
             </Link>
@@ -398,6 +420,9 @@ export default async function CheckInSummaryPage({
               </Link>
               <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
                 {t(locale, "Ir a iniciativas", "Go to initiatives")}
+              </Link>
+              <Link href={dataPackHref} className={btnPrimary()}>
+                {t(locale, "Data Pack", "Data Pack")}
               </Link>
             </div>
           </div>

@@ -1,4 +1,3 @@
-// app/[locale]/wizard/[engagementId]/check-in/page.tsx
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import CheckInNav from "@/components/see/CheckInNav";
@@ -88,6 +87,7 @@ export default async function CheckInPage({
   const kpisHref = `/${locale}/wizard/${engagementId}/check-in/kpis?${baseQs}`;
   const initsHref = `/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`;
   const summaryHref = `/${locale}/wizard/${engagementId}/check-in/summary?${baseQs}`;
+  const dataPackHref = `/${locale}/wizard/${engagementId}/check-in/data-pack?${baseQs}`;
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
@@ -119,7 +119,6 @@ export default async function CheckInPage({
           </div>
         </div>
 
-        {/* NAV/TABS DEL CHECK-IN (botones evidentes, con activo) */}
         <div className="mt-4">
           <CheckInNav locale={locale} engagementId={engagementId} />
         </div>
@@ -168,7 +167,6 @@ export default async function CheckInPage({
               <span className="font-semibold">{activeAccountId ? t(locale, "Unidad", "Unit") : "GLOBAL"}</span>
             </span>
 
-            {/* CTA principal (guía al usuario) */}
             <Link
               href={kpisHref}
               className="ml-auto inline-flex items-center rounded-full bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 transition-all active:scale-[0.98]"
@@ -178,8 +176,7 @@ export default async function CheckInPage({
           </div>
         </form>
 
-        {/* “Botones grandes” (ya no parecen tarjetas perdidas) */}
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
+        <div className="mt-6 grid gap-3 md:grid-cols-4">
           <Link href={kpisHref} className={actionCard()}>
             <div className={actionTitle()}>{t(locale, "1) KPIs", "1) KPIs")}</div>
             <div className={actionDesc()}>{t(locale, "Carga valores y notas.", "Log values and notes.")}</div>
@@ -202,6 +199,16 @@ export default async function CheckInPage({
             <div className={actionTitle()}>{t(locale, "3) Resumen", "3) Summary")}</div>
             <div className={actionDesc()}>
               {t(locale, "Diff vs período anterior + resumen ejecutivo.", "Diff vs previous period + exec summary.")}
+            </div>
+            <div className="mt-3 text-[11px] font-semibold text-indigo-600 group-hover:text-indigo-500">
+              {t(locale, "Abrir →", "Open →")}
+            </div>
+          </Link>
+
+          <Link href={dataPackHref} className={actionCard()}>
+            <div className={actionTitle()}>{t(locale, "Data Pack", "Data Pack")}</div>
+            <div className={actionDesc()}>
+              {t(locale, "Salida 1-página (Operación / Dirección).", "One-page output (Ops / Exec).")}
             </div>
             <div className="mt-3 text-[11px] font-semibold text-indigo-600 group-hover:text-indigo-500">
               {t(locale, "Abrir →", "Open →")}
