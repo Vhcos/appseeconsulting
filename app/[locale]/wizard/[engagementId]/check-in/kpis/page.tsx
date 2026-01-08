@@ -3,7 +3,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CheckInNav from "@/components/see/CheckInNav";
-import { KpiDirection, BscPerspective, Prisma } from "@prisma/client";
+import KpiMiniChart from "@/components/see/KpiMiniChart";
+import { KpiDirection, BscPerspective, Prisma, KpiBasis } from "@prisma/client";
+import Sparkline from "@/components/see/Sparkline";
+import { buildMonthKeysBack, computeEvaluatedSeries, computeEvaluatedValue } from "@/lib/see/kpiEval";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +26,7 @@ function sanitizeSegment(raw: string | null): string | null {
   return s;
 }
 
-const PERSPECTIVE_ORDER: BscPerspective[] = [
-  "FINANCIAL",
-  "CUSTOMER",
-  "INTERNAL_PROCESS",
-  "LEARNING_GROWTH",
-];
+const PERSPECTIVE_ORDER: BscPerspective[] = ["FINANCIAL", "CUSTOMER", "INTERNAL_PROCESS", "LEARNING_GROWTH"];
 
 function perspectiveRank(p: BscPerspective) {
   const i = PERSPECTIVE_ORDER.indexOf(p);
@@ -80,6 +78,10 @@ function computeIsGreen(direction: KpiDirection, value: number | null, target: n
   return direction === "HIGHER_IS_BETTER" ? value >= target : value <= target;
 }
 
+function pill(cls: string) {
+  return ["inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold", cls].join(" ");
+}
+
 function btnSoft() {
   return [
     "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
@@ -105,6 +107,12 @@ function btnDark() {
     "transition-all active:scale-[0.98]",
     "focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
   ].join(" ");
+}
+
+function basisLabel(locale: string, b: KpiBasis) {
+  // No mostramos "A/L" al usuario; lo traducimos a algo humano.
+  if (b === "A") return t(locale, "Acumulado (Prom. YTD)", "Cumulative (YTD Avg)");
+  return t(locale, "Últimos 12 meses (Prom.)", "Last 12 months (Avg)");
 }
 
 export default async function CheckInKpisPage({
@@ -139,6 +147,16 @@ export default async function CheckInKpisPage({
     );
   }
 
+  const unitLabel =
+    activeAccountId
+      ? (
+          await prisma.accountPlanRow.findUnique({
+            where: { id: activeAccountId },
+            select: { account: true, id: true },
+          })
+        )?.account?.trim() || activeAccountId
+      : "GLOBAL";
+
   const rawKpis = await prisma.kpi.findMany({
     where: { engagementId },
     select: {
@@ -150,10 +168,10 @@ export default async function CheckInKpisPage({
       unit: true,
       targetValue: true,
       targetText: true,
+      basis: true,
     },
   });
 
-  // Orden fijo: Finanzas → Clientes → Operación → Procesos
   const kpis = [...rawKpis].sort((a, b) => {
     const ra = perspectiveRank(a.perspective);
     const rb = perspectiveRank(b.perspective);
@@ -167,19 +185,68 @@ export default async function CheckInKpisPage({
 
   const ids = kpis.map((k) => k.id);
 
-  const existing = ids.length
+  // Serie 12 meses para graficar/evaluar (una sola query)
+  const seriesKeys = buildMonthKeysBack(periodKey, 12);
+
+  const seriesRows = ids.length
     ? await prisma.kpiValue.findMany({
         where: {
           kpiId: { in: ids },
-          periodKey: { in: [periodKey, prevKey] },
           scopeKey,
+          periodKey: { in: seriesKeys },
         },
-        select: { id: true, kpiId: true, periodKey: true, value: true, note: true, isGreen: true, scopeKey: true },
+        select: { kpiId: true, periodKey: true, value: true, note: true, isGreen: true },
       })
     : [];
 
-  const byKey = new Map<string, typeof existing[number]>();
-  for (const v of existing) byKey.set(`${v.kpiId}:${v.periodKey}`, v);
+  // Map kpiId -> Map(periodKey -> value/row)
+  const rowByKpiPeriod = new Map<string, typeof seriesRows[number]>();
+  for (const r of seriesRows) rowByKpiPeriod.set(`${r.kpiId}:${r.periodKey}`, r);
+
+  // Construimos series por KPI
+  const seriesByKpi = new Map<string, { series: { periodKey: string; value: number | null }[] }>();
+  for (const k of kpis) {
+    const s = seriesKeys.map((pk) => {
+      const r = rowByKpiPeriod.get(`${k.id}:${pk}`);
+      const v = r?.value != null ? toNumber(r.value.toString()) : null;
+      return { periodKey: pk, value: v };
+    });
+    seriesByKpi.set(k.id, { series: s });
+  }
+
+  // Stats del mes, pero con semáforo evaluado (según basis)
+  let cntWithData = 0;
+  let cntGreen = 0;
+  let cntRed = 0;
+
+  const evaluatedNowByKpi = new Map<string, number | null>();
+  const evaluatedSeriesByKpi = new Map<string, Array<number | null>>();
+
+  for (const k of kpis) {
+    const pack = seriesByKpi.get(k.id);
+    const series = pack?.series ?? [];
+    const evalSeries = computeEvaluatedSeries(k.basis, series);
+    const evaluatedNow = computeEvaluatedValue(k.basis, series, periodKey);
+
+    evaluatedNowByKpi.set(k.id, evaluatedNow);
+    evaluatedSeriesByKpi.set(k.id, evalSeries);
+
+    const currentRow = rowByKpiPeriod.get(`${k.id}:${periodKey}`);
+    const currentValue = currentRow?.value != null ? toNumber(currentRow.value.toString()) : null;
+
+    if (currentValue == null) continue;
+    cntWithData += 1;
+
+    const targetNum = k.targetValue == null ? null : Number(String(k.targetValue));
+    const safeTargetNum = Number.isFinite(targetNum) ? targetNum : null;
+
+    const isGreenEval = computeIsGreen(k.direction, evaluatedNow, safeTargetNum);
+    if (isGreenEval) cntGreen += 1;
+    else cntRed += 1;
+  }
+
+  const cntTotal = kpis.length;
+  const cntMissing = Math.max(0, cntTotal - cntWithData);
 
   async function save(formData: FormData) {
     "use server";
@@ -195,19 +262,14 @@ export default async function CheckInKpisPage({
 
     const list = await prisma.kpi.findMany({
       where: { engagementId },
-      select: { id: true, direction: true, targetValue: true },
+      select: { id: true, direction: true, targetValue: true, basis: true },
     });
 
+    // 1) Upsert valores/nota del mes (raw mensual)
     await Promise.all(
       list.map(async (k) => {
         const rawValue = String(formData.get(`value_${k.id}`) ?? "").trim();
         const rawNote = String(formData.get(`note_${k.id}`) ?? "").trim();
-
-        const valueNum = rawValue === "" ? null : Number(rawValue);
-        const targetNum = k.targetValue ? Number(String(k.targetValue)) : null;
-
-        const safeValueNum = Number.isFinite(valueNum as number) ? (valueNum as number) : null;
-        const isGreen = computeIsGreen(k.direction, safeValueNum, targetNum);
 
         const valueDec =
           rawValue === "" ? null : Number.isFinite(Number(rawValue)) ? new Prisma.Decimal(rawValue) : null;
@@ -223,7 +285,7 @@ export default async function CheckInKpisPage({
             periodEnd: end,
             value: valueDec,
             note: rawNote || null,
-            isGreen,
+            isGreen: false, // se recalcula abajo con evaluatedValue
             createdByUserId: null,
           },
           update: {
@@ -231,9 +293,45 @@ export default async function CheckInKpisPage({
             periodEnd: end,
             value: valueDec,
             note: rawNote || null,
-            isGreen,
             accountPlanRowId: safeAccountId,
           },
+        });
+      }),
+    );
+
+    // 2) Recalcular semáforo del mes basado en evaluatedValue (A/L)
+    const ids = list.map((k) => k.id);
+    const seriesKeys = buildMonthKeysBack(safePeriod, 12);
+
+    const rows = ids.length
+      ? await prisma.kpiValue.findMany({
+          where: { kpiId: { in: ids }, scopeKey, periodKey: { in: seriesKeys } },
+          select: { kpiId: true, periodKey: true, value: true },
+        })
+      : [];
+
+    const byKpi = new Map<string, Map<string, number | null>>();
+    for (const r of rows) {
+      const m = byKpi.get(r.kpiId) ?? new Map<string, number | null>();
+      m.set(r.periodKey, r.value != null ? Number(r.value.toString()) : null);
+      byKpi.set(r.kpiId, m);
+    }
+
+    await Promise.all(
+      list.map(async (k) => {
+        const m = byKpi.get(k.id) ?? new Map<string, number | null>();
+        const series = seriesKeys.map((pk) => ({ periodKey: pk, value: m.get(pk) ?? null }));
+
+        const evaluated = computeEvaluatedValue(k.basis, series, safePeriod);
+
+        const targetNum = k.targetValue == null ? null : Number(String(k.targetValue));
+        const safeTargetNum = Number.isFinite(targetNum) ? targetNum : null;
+
+        const isGreen = computeIsGreen(k.direction, evaluated, safeTargetNum);
+
+        await prisma.kpiValue.update({
+          where: { kpiId_periodKey_scopeKey: { kpiId: k.id, periodKey: safePeriod, scopeKey } },
+          data: { isGreen },
         });
       }),
     );
@@ -274,18 +372,36 @@ export default async function CheckInKpisPage({
               {engagement.name || t(locale, "Engagement", "Engagement")}
             </h1>
 
-            <p className="mt-1 text-xs text-slate-600">
-              {t(locale, "Período:", "Period:")} <span className="font-semibold">{periodKey}</span>
-              {" · "}
-              {t(locale, "Scope:", "Scope:")}{" "}
-              <span className="font-semibold">{activeAccountId ? t(locale, "Unidad", "Unit") : "GLOBAL"}</span>
-            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span>
+                {t(locale, "Período:", "Period:")} <span className="font-semibold">{periodKey}</span>
+              </span>
+              <span className="text-slate-300">·</span>
+              <span>
+                {t(locale, "Unidad:", "Unit:")} <span className="font-semibold">{unitLabel}</span>
+              </span>
+
+              <span className="ml-2 inline-flex flex-wrap items-center gap-2">
+                <span className={pill("bg-slate-100 text-slate-700")}>
+                  {t(locale, "Total", "Total")}: {cntTotal}
+                </span>
+                <span className={pill("bg-slate-100 text-slate-700")}>
+                  {t(locale, "Sin dato", "Missing")}: {cntMissing}
+                </span>
+                <span className={pill("bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100")}>
+                  {t(locale, "Verdes", "Green")}: {cntGreen}
+                </span>
+                <span className={pill("bg-rose-50 text-rose-700 ring-1 ring-rose-100")}>
+                  {t(locale, "Rojos", "Red")}: {cntRed}
+                </span>
+              </span>
+            </div>
 
             <p className="mt-2 text-xs text-slate-600">
               {t(
                 locale,
-                "Tip: completa valores y luego guarda. Después sigue con Iniciativas y cierra con Resumen.",
-                "Tip: fill values and save. Then continue with Initiatives and close with Summary."
+                "Ingresas el dato del mes. El estado se evalúa con la regla del KPI (Acumulado o Últimos 12 meses).",
+                "You enter the monthly value. Status is evaluated using the KPI rule (YTD or Last 12 months)."
               )}
             </p>
           </div>
@@ -296,7 +412,7 @@ export default async function CheckInKpisPage({
             </Link>
 
             <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
-              {t(locale, "Ir a Iniciativas →", "Go to Initiatives →")}
+              {t(locale, "Iniciativas →", "Initiatives →")}
             </Link>
 
             <Link href={`/${locale}/wizard/${engagementId}/check-in/summary?${baseQs}`} className={btnPrimary()}>
@@ -305,16 +421,33 @@ export default async function CheckInKpisPage({
           </div>
         </div>
 
-        <div className="mt-4">
-          <CheckInNav locale={locale} engagementId={engagementId} />
-        </div>
+        <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <summary className="cursor-pointer select-none text-xs font-semibold text-slate-800">
+            {t(locale, "Ver navegación del wizard", "Show wizard navigation")}
+          </summary>
+          <p className="mt-1 text-xs text-slate-600">
+            {t(locale, "Útil si necesitas saltar a otras etapas.", "Use this if you need to jump to other stages.")}
+          </p>
+          <div className="mt-3">
+            <CheckInNav locale={locale} engagementId={engagementId} />
+          </div>
+        </details>
 
         {kpis.length === 0 ? (
           <p className="mt-6 text-xs text-slate-600">{t(locale, "No hay KPIs creados aún.", "No KPIs yet.")}</p>
         ) : (
-          <form action={save} className="mt-6 space-y-6">
+          <form action={save} className="mt-6 space-y-8">
             <input type="hidden" name="periodKey" value={periodKey} />
             <input type="hidden" name="accountId" value={activeAccountId ?? ""} />
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
+                {t(locale, "Siguiente: Iniciativas →", "Next: Initiatives →")}
+              </Link>
+              <button type="submit" className={btnDark()}>
+                {t(locale, "Guardar KPIs", "Save KPIs")}
+              </button>
+            </div>
 
             {PERSPECTIVE_ORDER.map((p) => {
               const list = grouped.get(p) ?? [];
@@ -325,84 +458,121 @@ export default async function CheckInKpisPage({
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-slate-900">{perspectiveLabel(locale, p)}</h2>
                     <div className="text-[11px] text-slate-500">
-                      {t(locale, "Orden fijo:", "Fixed order:")} {t(locale, "Finanzas → Clientes → Operación → Procesos", "Financial → Customer → Ops → Processes")}
+                      {t(locale, "Prev:", "Prev:")} {prevKey}
                     </div>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {list.map((k) => {
-                      const current = byKey.get(`${k.id}:${periodKey}`);
-                      const prev = byKey.get(`${k.id}:${prevKey}`);
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="min-w-[1080px] w-full bg-white">
+                      <thead className="bg-slate-50">
+                        <tr className="text-left text-[11px] font-semibold text-slate-700">
+                          <th className="px-4 py-3 w-[360px]">{t(locale, "KPI", "KPI")}</th>
+                          <th className="px-4 py-3 w-[90px]">{t(locale, "Prev", "Prev")}</th>
+                          <th className="px-4 py-3 w-[140px]">{t(locale, "Valor (mes)", "Monthly value")}</th>
+                          <th className="px-4 py-3 w-[90px]">Δ</th>
+                          <th className="px-4 py-3 w-[140px]">{t(locale, "Evaluado", "Evaluated")}</th>
+                          <th className="px-4 py-3 w-[140px]">{t(locale, "Meta", "Target")}</th>
+                          <th className="px-4 py-3 w-[110px]">{t(locale, "Estado", "Status")}</th>
+                          <th className="px-4 py-3 w-[320px]">{t(locale, "Nota", "Note")}</th>
+                        </tr>
+                      </thead>
 
-                      const prevNum = toNumber(prev?.value?.toString());
-                      const curNum = toNumber(current?.value?.toString());
-                      const targetNum = k.targetValue ? Number(String(k.targetValue)) : null;
+                      <tbody className="divide-y divide-slate-100">
+                        {list.map((k) => {
+                          const currentRow = rowByKpiPeriod.get(`${k.id}:${periodKey}`);
+                          const prevRow = rowByKpiPeriod.get(`${k.id}:${prevKey}`);
 
-                      const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
+                          const prevNum = prevRow?.value != null ? toNumber(prevRow.value.toString()) : null;
+                          const curNum = currentRow?.value != null ? toNumber(currentRow.value.toString()) : null;
 
-                      const badge = !current
-                        ? { txt: t(locale, "Sin dato", "No data"), cls: "text-slate-500" }
-                        : current.isGreen
-                          ? { txt: t(locale, "Verde", "Green"), cls: "text-emerald-700 font-semibold" }
-                          : { txt: t(locale, "Rojo", "Red"), cls: "text-rose-700 font-semibold" };
+                          const targetNum = k.targetValue == null ? null : Number(String(k.targetValue));
+                          const safeTargetNum = Number.isFinite(targetNum) ? targetNum : null;
 
-                      return (
-                        <div key={k.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-semibold text-slate-900">{t(locale, k.nameEs, k.nameEn)}</div>
-                              <div className="mt-1 text-[11px] text-slate-600">
-                                {perspectiveLabel(locale, k.perspective)}
-                                {k.unit ? ` · ${k.unit}` : ""}
-                              </div>
+                          const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
 
-                              <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
-                                <div>
-                                  {t(locale, "Prev:", "Prev:")}{" "}
-                                  <span className="font-semibold">{prev?.value ? String(prev.value) : "—"}</span>
-                                  {delta != null ? ` · Δ ${delta}` : ""}
+                          const evaluatedNow = evaluatedNowByKpi.get(k.id) ?? null;
+                          const evalSeries = evaluatedSeriesByKpi.get(k.id) ?? [];
+
+                          const isGreenEval = computeIsGreen(k.direction, evaluatedNow, safeTargetNum);
+
+                          const badge =
+                            curNum == null
+                              ? { txt: t(locale, "Sin dato", "No data"), cls: pill("bg-slate-100 text-slate-700") }
+                              : isGreenEval
+                                ? { txt: t(locale, "Verde", "Green"), cls: pill("bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100") }
+                                : { txt: t(locale, "Rojo", "Red"), cls: pill("bg-rose-50 text-rose-700 ring-1 ring-rose-100") };
+
+                          const series = seriesByKpi.get(k.id)?.series ?? [];
+
+                          return (
+                            <tr key={k.id} className="align-top">
+                              <td className="px-4 py-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-semibold text-slate-900">{t(locale, k.nameEs, k.nameEn)}</div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      <span className={pill("bg-slate-100 text-slate-700")}>{basisLabel(locale, k.basis)}</span>
+                                      <span className="text-[11px] text-slate-600">
+                                        {k.unit ? `${k.unit}` : t(locale, "Sin unidad", "No unit")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0">
+                                    <KpiMiniChart
+                                      series={series}
+                                      evaluatedSeries={evalSeries}
+                                      targetValue={safeTargetNum}
+                                    />
+                                  </div>
                                 </div>
-                                <div>
-                                  {t(locale, "Target:", "Target:")}{" "}
-                                  <span className="font-semibold">{targetNum != null ? String(targetNum) : "—"}</span>
-                                  {k.targetText ? ` · ${k.targetText}` : ""}
+                              </td>
+
+                              <td className="px-4 py-3 text-sm text-slate-900">
+                                {prevRow?.value != null ? String(prevRow.value) : "—"}
+                              </td>
+
+                              <td className="px-4 py-3">
+                                <input
+                                  name={`value_${k.id}`}
+                                  defaultValue={currentRow?.value != null ? String(currentRow.value) : ""}
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                  placeholder={t(locale, "Ej: 12.5", "e.g. 12.5")}
+                                />
+                              </td>
+
+                              <td className="px-4 py-3 text-sm text-slate-900">
+                                {delta != null ? <span>{delta}</span> : "—"}
+                              </td>
+
+                              <td className="px-4 py-3 text-sm text-slate-900">
+                                <div className="font-semibold">{evaluatedNow != null ? String(evaluatedNow) : "—"}</div>
+                                <div className="mt-1 text-[11px] text-slate-600">
+                                  {t(locale, "Regla:", "Rule:")} {basisLabel(locale, k.basis)}
                                 </div>
-                              </div>
-                            </div>
+                              </td>
 
-                            <div className="text-right text-[11px]">
-                              <span className={badge.cls}>{badge.txt}</span>
-                            </div>
-                          </div>
+                              <td className="px-4 py-3 text-sm text-slate-900">
+                                <div className="font-semibold">{safeTargetNum != null ? String(safeTargetNum) : "—"}</div>
+                                {k.targetText ? <div className="mt-1 text-[11px] text-slate-600">{k.targetText}</div> : null}
+                              </td>
 
-                          <div className="mt-3 grid gap-2 md:grid-cols-3">
-                            <div className="md:col-span-1">
-                              <label className="block text-[11px] font-semibold text-slate-700">
-                                {t(locale, "Valor", "Value")}
-                              </label>
-                              <input
-                                name={`value_${k.id}`}
-                                defaultValue={current?.value ? String(current.value) : ""}
-                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                placeholder={t(locale, "Ej: 12.5", "e.g. 12.5")}
-                              />
-                            </div>
+                              <td className="px-4 py-3">
+                                <span className={badge.cls}>{badge.txt}</span>
+                              </td>
 
-                            <div className="md:col-span-2">
-                              <label className="block text-[11px] font-semibold text-slate-700">
-                                {t(locale, "Nota", "Note")}
-                              </label>
-                              <input
-                                name={`note_${k.id}`}
-                                defaultValue={current?.note ?? ""}
-                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                                placeholder={t(locale, "Contexto, fuente, comentarios…", "Context, source, comments…")}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                              <td className="px-4 py-3">
+                                <input
+                                  name={`note_${k.id}`}
+                                  defaultValue={currentRow?.note ?? ""}
+                                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                  placeholder={t(locale, "Contexto, fuente, comentario…", "Context, source, comment…")}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </section>
               );
@@ -412,7 +582,6 @@ export default async function CheckInKpisPage({
               <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
                 {t(locale, "Siguiente: Iniciativas →", "Next: Initiatives →")}
               </Link>
-
               <button type="submit" className={btnDark()}>
                 {t(locale, "Guardar KPIs", "Save KPIs")}
               </button>

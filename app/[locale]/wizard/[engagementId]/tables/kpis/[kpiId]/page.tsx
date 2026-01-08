@@ -1,9 +1,10 @@
+// app/[locale]/wizard/[engagementId]/tables/kpis/[kpiId]/page.tsx
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { BscPerspective, KpiDirection, KpiFrequency } from "@prisma/client";
+import { BscPerspective, KpiBasis, KpiDirection, KpiFrequency } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,6 @@ function inferFromReferer(referer: string | null, locale: string, engagementId: 
   try {
     const u = new URL(referer);
 
-    // Si venía con ?from=step-x, lo respetamos (esto es clave)
     const qp = sanitizeSegment(u.searchParams.get("from") ?? "");
     if (qp) return qp;
 
@@ -80,9 +80,12 @@ function dirLabel(locale: string, d: KpiDirection) {
   return t(locale, map[d].es, map[d].en);
 }
 
-function toIsoDateInput(_d: Date | null | undefined): string {
-  // (por si mañana agregamos fechas a KPI)
-  return "";
+function basisLabel(locale: string, b: KpiBasis) {
+  const map: Record<KpiBasis, { es: string; en: string }> = {
+    A: { es: "A (YTD-AVG)", en: "A (YTD-AVG)" },
+    L: { es: "L (LTM/TTM)", en: "L (LTM/TTM)" },
+  };
+  return t(locale, map[b].es, map[b].en);
 }
 
 export default async function KpiEditPage({
@@ -110,6 +113,7 @@ export default async function KpiEditPage({
       perspective: true,
       frequency: true,
       direction: true,
+      basis: true, // ✅
       unit: true,
       targetValue: true,
       targetText: true,
@@ -159,10 +163,13 @@ export default async function KpiEditPage({
       ? (directionRaw as KpiDirection)
       : KpiDirection.HIGHER_IS_BETTER);
 
+    // ✅ Base (A/L) – default A
+    const basisRaw = String(formData.get("basis") ?? "").trim().toUpperCase();
+    const basis: KpiBasis = basisRaw === "L" ? "L" : "A";
+
     const unit = String(formData.get("unit") ?? "").trim() || null;
 
     const targetValueRaw = String(formData.get("targetValue") ?? "").trim();
-    // Ojo: puede ser Decimal en Prisma. Pasamos string y Prisma se encarga.
     const targetValue = targetValueRaw ? (targetValueRaw as any) : null;
 
     const targetText = String(formData.get("targetText") ?? "").trim() || null;
@@ -176,11 +183,8 @@ export default async function KpiEditPage({
 
     const actionText = String(formData.get("actionText") ?? "").trim() || null;
 
-    // Mantener coherencia i18n:
-    // - nameEn: si estás en ES, copiamos ES. Si estás en EN, puedes setear nameEn manual.
     const nameEnFinal = locale === "en" ? (nameEnInput || nameEs) : nameEs;
 
-    // Acción: guardamos en descriptionEs / descriptionEn según el idioma actual
     const descriptionEs = locale === "en" ? null : actionText;
     const descriptionEn = locale === "en" ? actionText : null;
 
@@ -192,6 +196,7 @@ export default async function KpiEditPage({
         perspective,
         frequency,
         direction,
+        basis, // ✅
         unit,
         targetValue,
         targetText,
@@ -210,6 +215,7 @@ export default async function KpiEditPage({
 
   const showEnglish = locale === "en";
   const actionShown = locale === "en" ? (kpi.descriptionEn ?? "") : (kpi.descriptionEs ?? "");
+  const basis = (kpi.basis ?? "A") as KpiBasis;
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-8">
@@ -300,6 +306,26 @@ export default async function KpiEditPage({
             </select>
           </div>
 
+          {/* ✅ Base A/L */}
+          <div className="md:col-span-2">
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Base", "Basis")}</label>
+            <select
+              name="basis"
+              defaultValue={basis}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            >
+              <option value="A">{basisLabel(locale, "A")}</option>
+              <option value="L">{basisLabel(locale, "L")}</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {t(
+                locale,
+                "A = YTD-AVG (Year to Date Average). L = LTM/TTM (Last/Trailing Twelve Months).",
+                "A = YTD-AVG (Year to Date Average). L = LTM/TTM (Last/Trailing Twelve Months)."
+              )}
+            </p>
+          </div>
+
           <div>
             <label className="text-xs font-semibold text-slate-800">{t(locale, "Unidad (opcional)", "Unit (optional)")}</label>
             <input
@@ -310,7 +336,7 @@ export default async function KpiEditPage({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-800">{t(locale, "Dueño (email) (opcional)", "Owner (email) (optional)")}</label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Responsable (email) (opcional)", "Owner (email) (optional)")}</label>
             <input
               name="ownerEmail"
               defaultValue={ownerEmail}

@@ -8,7 +8,6 @@ export const runtime = "nodejs";
 function safeNumber(v: unknown): number | null {
   if (v == null) return null;
   if (typeof v === "number" && Number.isFinite(v)) return v;
-  // Prisma Decimal -> toString()
   try {
     const n = Number((v as any).toString?.() ?? v);
     return Number.isFinite(n) ? n : null;
@@ -30,6 +29,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ engagement
       perspective: true,
       frequency: true,
       direction: true,
+      basis: true, // ✅
       unit: true,
       targetValue: true,
       targetText: true,
@@ -52,6 +52,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ engagement
     { header: "Perspectiva", key: "perspective", width: 18 },
     { header: "Frecuencia", key: "frequency", width: 14 },
     { header: "Dirección", key: "direction", width: 18 },
+    { header: "Base (A/L)", key: "basis", width: 12 }, // ✅
     { header: "Unidad", key: "unit", width: 14 },
     { header: "Meta (valor)", key: "targetValue", width: 14 },
     { header: "Meta (texto)", key: "targetText", width: 30 },
@@ -60,7 +61,6 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ engagement
     { header: "Fuente de datos", key: "dataSource", width: 14 },
   ];
 
-  // Header style
   ws.getRow(1).font = { bold: true };
   ws.views = [{ state: "frozen", ySplit: 1 }];
 
@@ -72,6 +72,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ engagement
       perspective: k.perspective,
       frequency: k.frequency,
       direction: k.direction,
+      basis: (k as any).basis ?? "A", // ✅ compat con datos antiguos
       unit: k.unit ?? "",
       targetValue: safeNumber(k.targetValue),
       targetText: k.targetText ?? "",
@@ -81,7 +82,6 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ engagement
     });
   }
 
-  // Auto filter
   ws.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: ws.columns.length },

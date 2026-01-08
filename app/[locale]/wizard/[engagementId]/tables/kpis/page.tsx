@@ -1,10 +1,11 @@
+// app/[locale]/wizard/[engagementId]/tables/kpis/page.tsx
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getHelpVideo } from "@/lib/see/helpVideos";
-import { BscPerspective, KpiDirection, KpiFrequency } from "@prisma/client";
+import { BscPerspective, KpiBasis, KpiDirection, KpiFrequency } from "@prisma/client";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
 type SearchParamsPromise = Promise<Record<string, string | string[] | undefined>>;
@@ -68,6 +69,14 @@ function dirLabel(locale: string, d: KpiDirection) {
   return t(locale, map[d].es, map[d].en);
 }
 
+function basisLabel(locale: string, b: KpiBasis) {
+  const map: Record<KpiBasis, { es: string; en: string }> = {
+    A: { es: "A (YTD-AVG)", en: "A (YTD-AVG)" },
+    L: { es: "L (LTM/TTM)", en: "L (LTM/TTM)" },
+  };
+  return t(locale, map[b].es, map[b].en);
+}
+
 function isNextRedirectError(e: unknown): boolean {
   return (
     typeof e === "object" &&
@@ -87,7 +96,6 @@ function normalizeNumericString(raw: string): string | null {
   const s0 = (raw ?? "").trim();
   if (!s0) return null;
   const s = s0.replace(/\s+/g, "").replace(",", ".");
-  // permite negativo y decimales
   if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
   const n = Number(s);
   if (!Number.isFinite(n)) return null;
@@ -174,12 +182,34 @@ type KpiCsvRow = {
   perspective: BscPerspective | null;
   frequency: KpiFrequency | null;
   direction: KpiDirection | null;
+  basis: KpiBasis | null; // ✅ NUEVO
   unit: string | null;
   targetValue: string | null; // NUMERICA
   targetText: string | null; // DETALLE
   ownerEmail: string | null;
   actionText: string | null; // se guarda en descriptionEs/En
 };
+
+function mapBasisCsv(v: string): KpiBasis | null {
+  const raw0 = (v ?? "").trim();
+  if (!raw0) return null;
+
+  const raw = raw0.toUpperCase().replace(/\s+/g, "").replace(/_/g, "-");
+
+  if (raw === "A") return "A";
+  if (raw === "L") return "L";
+
+  // variantes comunes
+  if (raw.includes("YTD")) return "A"; // YTD (Year to Date)
+  if (raw.includes("AVG")) return "A"; // AVG (Average)
+  if (raw.includes("YTD-AVG")) return "A";
+
+  if (raw.includes("LTM")) return "L"; // LTM (Last Twelve Months)
+  if (raw.includes("TTM")) return "L"; // TTM (Trailing Twelve Months)
+  if (raw.includes("LTM/TTM")) return "L";
+
+  return null;
+}
 
 function mapPerspectiveCsv(v: string): BscPerspective | null {
   const raw = (v ?? "").trim();
@@ -329,6 +359,15 @@ function parseCsvToKpiRows(csvTextRaw: string): { rows: KpiCsvRow[]; headerKeys:
       direccion: "direction",
       direction: "direction",
 
+      // ✅ base (A / L)
+      base: "basis",
+      basis: "basis",
+      tipo: "basis",
+      calc_basis: "basis",
+      calculation_basis: "basis",
+      periodo_base: "basis",
+      base_calculo: "basis",
+
       // extras
       unidad: "unit",
       unit: "unit",
@@ -338,7 +377,7 @@ function parseCsvToKpiRows(csvTextRaw: string): { rows: KpiCsvRow[]; headerKeys:
       meta_numerica: "target_value",
       meta_num: "target_value",
       target: "target_value",
-      meta: "target_value", // si viene "meta" numérica, la tomamos acá
+      meta: "target_value",
 
       // detalle meta (texto)
       target_text: "target_text",
@@ -350,15 +389,13 @@ function parseCsvToKpiRows(csvTextRaw: string): { rows: KpiCsvRow[]; headerKeys:
       target_detail: "target_text",
       target_details: "target_text",
 
-      // dueño
-      dueno_email: "owner_email",
-      dueño_email: "owner_email",
+      // responsable
+      responsable_email: "owner_email",
       owner_email: "owner_email",
       owner: "owner_email",
-      dueno: "owner_email",
-      dueño: "owner_email",
+      responsable: "owner_email",
 
-      // ACCION (preferido). También aceptamos "descripcion" por compatibilidad.
+      // ACCION
       accion: "action_text",
       acción: "action_text",
       action: "action_text",
@@ -399,14 +436,13 @@ function parseCsvToKpiRows(csvTextRaw: string): { rows: KpiCsvRow[]; headerKeys:
     const perspectiveRaw = get(["perspective"], values);
     const frequencyRaw = get(["frequency"], values);
     const directionRaw = get(["direction"], values);
+    const basisRaw = get(["basis"], values);
 
     const unit = get(["unit"], values) || "";
 
-    // meta numérica
     const targetValueRaw = get(["target_value"], values) || "";
     const targetValueNorm = targetValueRaw ? normalizeNumericString(targetValueRaw) : null;
 
-    // detalle meta (texto)
     const targetText = get(["target_text"], values) || "";
 
     const ownerEmail = get(["owner_email"], values) || "";
@@ -418,6 +454,7 @@ function parseCsvToKpiRows(csvTextRaw: string): { rows: KpiCsvRow[]; headerKeys:
       perspective: mapPerspectiveCsv(perspectiveRaw),
       frequency: mapFrequencyCsv(frequencyRaw),
       direction: mapDirectionCsv(directionRaw),
+      basis: mapBasisCsv(basisRaw),
       unit: unit ? unit : null,
       targetValue: targetValueNorm ? targetValueNorm : null,
       targetText: targetText ? targetText : null,
@@ -458,9 +495,12 @@ async function createKpi(engagementId: string, locale: string, formData: FormDat
   const frequency = String(formData.get("frequency") ?? "").trim() as KpiFrequency;
   const direction = String(formData.get("direction") ?? "").trim() as KpiDirection;
 
+  // ✅ Base (A/L) – default A
+  const basisRaw = String(formData.get("basis") ?? "").trim().toUpperCase();
+  const basis: KpiBasis = basisRaw === "L" ? "L" : "A";
+
   const unit = String(formData.get("unit") ?? "").trim() || null;
 
-  // ✅ Meta numérica (si viene, debe ser número)
   const targetValueRaw = String(formData.get("targetValue") ?? "").trim();
   const targetValueNorm = targetValueRaw ? normalizeNumericString(targetValueRaw) : null;
   if (targetValueRaw && !targetValueNorm) {
@@ -475,7 +515,6 @@ async function createKpi(engagementId: string, locale: string, formData: FormDat
     );
   }
 
-  // ✅ Detalle de la meta (texto)
   const targetText = String(formData.get("targetText") ?? "").trim() || null;
 
   const ownerEmail = String(formData.get("ownerEmail") ?? "").trim();
@@ -486,10 +525,8 @@ async function createKpi(engagementId: string, locale: string, formData: FormDat
     ownerUserId = u?.id ?? null;
   }
 
-  // “Acción” lo guardamos en descriptionEs/En (sin tocar schema)
   const actionText = String(formData.get("actionText") ?? "").trim() || null;
 
-  // Mantener campos EN fuera del UI en español: auto-copiamos ES
   const nameEnInput = String(formData.get("nameEn") ?? "").trim();
   const nameEnFinal = locale === "en" ? (nameEnInput || nameEs) : nameEs;
 
@@ -504,6 +541,7 @@ async function createKpi(engagementId: string, locale: string, formData: FormDat
       perspective,
       frequency,
       direction,
+      basis, // ✅
       unit,
       targetValue: targetValueNorm ? (targetValueNorm as any) : null,
       targetText,
@@ -574,17 +612,13 @@ async function importKpisCsv(engagementId: string, locale: string, formData: For
       const frequency = r.frequency;
       const direction = r.direction;
 
-      // mínimos
       if (!nameEs || !perspective || !frequency || !direction) {
         failed++;
         continue;
       }
 
-      // si targetValue viene pero no es numérica => falla fila (preferimos no meter basura)
-      if (r.targetValue === null && (r as any).targetValueRaw) {
-        failed++;
-        continue;
-      }
+      // ✅ default A si viene vacío o inválido
+      const basis: KpiBasis = r.basis ?? "A";
 
       const nameEnFinal = locale === "en" ? ((r.nameEn ?? "").trim() || nameEs) : nameEs;
 
@@ -603,6 +637,7 @@ async function importKpisCsv(engagementId: string, locale: string, formData: For
             perspective,
             frequency,
             direction,
+            basis, // ✅
             unit: r.unit ?? null,
             targetValue: (r.targetValue ?? null) as any,
             targetText: r.targetText ?? null,
@@ -751,8 +786,8 @@ export default async function KpisPage({
             <p className="mt-1 text-sm text-slate-600">
               {t(
                 locale,
-                "Importa KPIs desde CSV. Meta debe ser numérica (target_value) y el texto va en detalle.",
-                "Import KPIs from CSV. Target must be numeric (target_value) and text goes in details."
+                "Importa KPIs desde CSV. Incluye Base (A/L): A = YTD-AVG (Year to Date Average), L = LTM/TTM (Last/Trailing Twelve Months). Si viene vacío, se asume A.",
+                "Import KPIs from CSV. Includes Basis (A/L): A = YTD-AVG (Year to Date Average), L = LTM/TTM (Last/Trailing Twelve Months). If blank, defaults to A."
               )}
             </p>
           </div>
@@ -833,7 +868,7 @@ export default async function KpisPage({
             ) : null}
           </div>
 
-          <div className="grid gap-2 md:grid-cols-3">
+          <div className="grid gap-2 md:grid-cols-4">
             <div>
               <label className="text-sm font-medium text-slate-800">{t(locale, "Perspectiva", "Perspective")}</label>
               <select
@@ -876,6 +911,22 @@ export default async function KpisPage({
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* ✅ Base A/L */}
+            <div>
+              <label className="text-sm font-medium text-slate-800">{t(locale, "Base", "Basis")}</label>
+              <select
+                name="basis"
+                defaultValue="A"
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
+              >
+                <option value="A">{t(locale, "A (YTD-AVG)", "A (YTD-AVG)")}</option>
+                <option value="L">{t(locale, "L (LTM/TTM)", "L (LTM/TTM)")}</option>
+              </select>
+              <div className="mt-1 text-xs text-slate-500">
+                {t(locale, "Si no estás segura, deja A.", "If unsure, keep A.")}
+              </div>
             </div>
           </div>
 
@@ -971,6 +1022,7 @@ export default async function KpisPage({
                   t(locale, "Perspectiva", "Perspective"),
                   t(locale, "Frecuencia", "Frequency"),
                   t(locale, "Dirección", "Direction"),
+                  t(locale, "Base", "Basis"),
                   t(locale, "Unidad", "Unit"),
                   t(locale, "Meta", "Target"),
                   t(locale, "Detalle de la meta", "Target details"),
@@ -990,23 +1042,28 @@ export default async function KpisPage({
             <tbody>
               {rows.map((r) => {
                 const actionShown = locale === "en" ? (r.descriptionEn ?? "") : (r.descriptionEs ?? "");
+                const b = (r as any).basis as KpiBasis | undefined; // por si hay registros antiguos
+                const basis = b ?? "A";
                 return (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="min-w-[260px] border-b border-slate-100 px-3 py-2">{t(locale, r.nameEs, r.nameEn)}</td>
                     <td className="min-w-[170px] border-b border-slate-100 px-3 py-2">{perspectiveLabel(locale, r.perspective)}</td>
                     <td className="min-w-[120px] border-b border-slate-100 px-3 py-2">{freqLabel(locale, r.frequency)}</td>
                     <td className="min-w-[170px] border-b border-slate-100 px-3 py-2">{dirLabel(locale, r.direction)}</td>
+
+                    <td className="min-w-[140px] border-b border-slate-100 px-3 py-2">
+                      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                        {basisLabel(locale, basis)}
+                      </span>
+                    </td>
+
                     <td className="min-w-[120px] border-b border-slate-100 px-3 py-2">{r.unit ?? ""}</td>
 
-                    {/* ✅ Meta numérica */}
                     <td className="min-w-[120px] border-b border-slate-100 px-3 py-2">
                       {r.targetValue != null ? String(r.targetValue) : ""}
                     </td>
 
-                    {/* ✅ Detalle de la meta */}
-                    <td className="min-w-[260px] border-b border-slate-100 px-3 py-2">
-                      {r.targetText ?? ""}
-                    </td>
+                    <td className="min-w-[260px] border-b border-slate-100 px-3 py-2">{r.targetText ?? ""}</td>
 
                     <td className="min-w-[320px] border-b border-slate-100 px-3 py-2">{actionShown}</td>
 
@@ -1032,7 +1089,7 @@ export default async function KpisPage({
 
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-500">
+                  <td colSpan={10} className="px-3 py-6 text-center text-sm text-slate-500">
                     {t(locale, "Aún no hay KPIs.", "No KPIs yet.")}
                   </td>
                 </tr>
