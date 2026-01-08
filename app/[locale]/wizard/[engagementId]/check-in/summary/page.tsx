@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CheckInNav from "@/components/see/CheckInNav";
+import { BscPerspective } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -111,6 +112,23 @@ function btnDark() {
   ].join(" ");
 }
 
+function perspectiveLabel(locale: string, p: BscPerspective) {
+  const map: Record<BscPerspective, { es: string; en: string }> = {
+    FINANCIAL: { es: "Finanzas", en: "Financial" },
+    CUSTOMER: { es: "Clientes", en: "Customer" },
+    INTERNAL_PROCESS: { es: "Procesos internos", en: "Internal process" },
+    LEARNING_GROWTH: { es: "Aprendizaje y crecimiento", en: "Learning & growth" },
+  };
+  return t(locale, map[p].es, map[p].en);
+}
+
+// Orden fijo para que SIEMPRE salga Finanzas → Clientes → Procesos → Aprendizaje
+const P_ORDER: BscPerspective[] = ["FINANCIAL", "CUSTOMER", "INTERNAL_PROCESS", "LEARNING_GROWTH"];
+function pIndex(p: BscPerspective) {
+  const i = P_ORDER.indexOf(p);
+  return i === -1 ? 999 : i;
+}
+
 export default async function CheckInSummaryPage({
   params,
   searchParams,
@@ -131,7 +149,18 @@ export default async function CheckInSummaryPage({
     prisma.engagement.findUnique({ where: { id: engagementId }, select: { id: true, name: true } }),
     prisma.kpi.findMany({
       where: { engagementId },
-      select: { id: true, nameEs: true, nameEn: true, perspective: true },
+      select: {
+        id: true,
+        nameEs: true,
+        nameEn: true,
+        perspective: true,
+        unit: true,
+        targetValue: true,
+        targetText: true,
+        direction: true,
+      },
+      // ojo: este orderBy puede variar según como Prisma ordene enums;
+      // igual dejamos orden final en JS para asegurar Finanzas → Clientes → Procesos → Aprendizaje
       orderBy: [{ perspective: "asc" }, { nameEs: "asc" }],
     }),
   ]);
@@ -182,10 +211,7 @@ export default async function CheckInSummaryPage({
   const prevInit = safeJsonParse<InitiativeSnapshot>(wpPrev?.notes, { items: [] });
   const prevById = new Map(prevInit.items.map((x) => [x.initiativeId, x]));
 
-  // Mapear id -> título (para que el resumen se entienda)
-  const initIds = Array.from(
-    new Set([...curInit.items.map((x) => x.initiativeId), ...prevInit.items.map((x) => x.initiativeId)]),
-  );
+  const initIds = Array.from(new Set([...curInit.items.map((x) => x.initiativeId), ...prevInit.items.map((x) => x.initiativeId)]));
   const initTitles = initIds.length
     ? await prisma.initiative.findMany({
         where: { id: { in: initIds } },
@@ -205,6 +231,7 @@ export default async function CheckInSummaryPage({
     })
     .filter((x) => x.deltaPct != null || x.statusChanged || x.blockersNow !== "" || x.notesNow !== "");
 
+  // KPI diffs (ordenados por perspectiva fija)
   const kpiDiffs = kpis
     .map((k) => {
       const cur = valMap.get(`${k.id}:${periodKey}`);
@@ -214,7 +241,15 @@ export default async function CheckInSummaryPage({
       const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
       return { kpi: k, cur, prev, delta };
     })
-    .filter((x) => x.cur || x.prev);
+    .filter((x) => x.cur || x.prev)
+    .sort((a, b) => {
+      const pa = pIndex(a.kpi.perspective);
+      const pb = pIndex(b.kpi.perspective);
+      if (pa !== pb) return pa - pb;
+      const na = (a.kpi.nameEs ?? "").toString();
+      const nb = (b.kpi.nameEs ?? "").toString();
+      return na.localeCompare(nb, "es");
+    });
 
   const summarySaved = safeJsonParse<{ highlights?: string; nextActions?: string }>(wpSummary?.notes, {});
   const highlightsDefault = summarySaved.highlights ?? "";
@@ -297,7 +332,6 @@ export default async function CheckInSummaryPage({
               {t(locale, "Iniciativas", "Initiatives")}
             </Link>
 
-            {/* CTA NUEVO: Data Pack (sin romper tus botones) */}
             <Link href={dataPackHref} className={btnPrimary()}>
               {t(locale, "Data Pack", "Data Pack")}
             </Link>
@@ -331,27 +365,50 @@ export default async function CheckInSummaryPage({
                 const prevV = x.prev?.value ? String(x.prev.value) : "—";
                 const curV = x.cur?.value ? String(x.cur.value) : "—";
                 const deltaTxt = x.delta != null ? ` · Δ ${x.delta}` : "";
+
+                const targetV = x.kpi.targetValue != null ? String(x.kpi.targetValue) : "—";
+                const targetTxt = (x.kpi.targetText ?? "").trim();
+                const unitTxt = (x.kpi.unit ?? "").trim();
+
                 return (
                   <div key={x.kpi.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-                    <div className="font-semibold text-slate-900">{t(locale, x.kpi.nameEs, x.kpi.nameEn)}</div>
-                    <div className="mt-1 text-[11px] text-slate-600">
-                      {t(locale, "Prev:", "Prev:")} <span className="font-semibold">{prevV}</span> ·{" "}
-                      {t(locale, "Actual:", "Current:")} <span className="font-semibold">{curV}</span>
-                      {deltaTxt}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-900">{t(locale, x.kpi.nameEs, x.kpi.nameEn)}</div>
+                        <div className="mt-1 text-[11px] text-slate-600">
+                          {perspectiveLabel(locale, x.kpi.perspective)}
+                          {unitTxt ? ` · ${unitTxt}` : ""}
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-right text-[11px]">
+                        {x.cur ? (
+                          x.cur.isGreen ? (
+                            <span className="font-semibold text-emerald-700">{t(locale, "Verde", "Green")}</span>
+                          ) : (
+                            <span className="font-semibold text-rose-700">{t(locale, "Rojo", "Red")}</span>
+                          )
+                        ) : (
+                          <span className="text-slate-500">{t(locale, "Sin dato", "No data")}</span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="mt-1 text-[11px] text-slate-600">
-                      {x.cur ? (
-                        x.cur.isGreen ? (
-                          <span className="font-semibold text-emerald-700">{t(locale, "Green", "Green")}</span>
-                        ) : (
-                          <span className="font-semibold text-amber-700">{t(locale, "No green", "Not green")}</span>
-                        )
-                      ) : (
-                        <span className="text-slate-500">{t(locale, "Sin dato actual", "No current data")}</span>
-                      )}
+                    <div className="mt-2 text-[11px] text-slate-700">
+                      <div>
+                        {t(locale, "Prev:", "Prev:")} <span className="font-semibold">{prevV}</span> ·{" "}
+                        {t(locale, "Actual:", "Current:")} <span className="font-semibold">{curV}</span>
+                        {deltaTxt}
+                      </div>
+
+                      <div className="mt-1">
+                        {t(locale, "Meta:", "Target:")}{" "}
+                        <span className="font-semibold">{targetV}</span>
+                        {targetTxt ? <span className="text-slate-500">{` · ${targetTxt}`}</span> : null}
+                      </div>
+
                       {x.cur?.note ? (
-                        <span className="text-slate-500">{` · ${t(locale, "Nota:", "Note:")} ${x.cur.note}`}</span>
+                        <div className="mt-1 text-slate-500">{`${t(locale, "Nota:", "Note:")} ${x.cur.note}`}</div>
                       ) : null}
                     </div>
                   </div>
@@ -372,11 +429,7 @@ export default async function CheckInSummaryPage({
 
           {initChanges.length === 0 ? (
             <p className="mt-2 text-xs text-slate-500">
-              {t(
-                locale,
-                "Sin cambios detectados (o no hay snapshot del período).",
-                "No changes detected (or missing period snapshot).",
-              )}
+              {t(locale, "Sin cambios detectados (o no hay snapshot del período).", "No changes detected (or missing period snapshot).")}
             </p>
           ) : (
             <div className="mt-3 space-y-2">
@@ -438,11 +491,7 @@ export default async function CheckInSummaryPage({
                 rows={4}
                 defaultValue={highlightsDefault}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                placeholder={t(
-                  locale,
-                  "3–6 bullets: qué pasó, qué cambió, qué preocupa.",
-                  "3–6 bullets: what happened, what changed, what worries us.",
-                )}
+                placeholder={t(locale, "3–6 bullets: qué pasó, qué cambió, qué preocupa.", "3–6 bullets: what happened, what changed, what worries us.")}
               />
             </div>
 
@@ -464,14 +513,6 @@ export default async function CheckInSummaryPage({
             </div>
           </form>
         </div>
-
-        <p className="mt-6 text-[11px] text-slate-500">
-          {t(
-            locale,
-            "Nota: diffs de riesgos/acciones “por período” quedan limitados mientras Risk y ActionItem no tengan timestamps. Se puede mejorar con una migración mínima (createdAt/updatedAt) sin tocar datos.",
-            "Note: risk/action diffs by period are limited while Risk and ActionItem lack timestamps. We can improve with a minimal migration (createdAt/updatedAt) without data loss.",
-          )}
-        </p>
       </section>
     </main>
   );

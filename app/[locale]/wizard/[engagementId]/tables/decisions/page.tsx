@@ -1,3 +1,4 @@
+//app/[locale]/wizard/[engagementId]/tables/decisions/page.tsx
 import Link from "next/link";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -72,6 +73,34 @@ async function deleteDecision(id: string, engagementId: string, locale: string) 
   await prisma.decision.delete({ where: { id } });
   revalidatePath(`/${locale}/wizard/${engagementId}/tables/decisions`);
 }
+
+async function decisionToAction(decisionId: string, engagementId: string, locale: string) {
+  "use server";
+
+  const d = await prisma.decision.findUnique({ where: { id: decisionId } });
+  if (!d) return;
+
+  const task = d.decision;
+  const owner = d.responsible ?? null;
+  const dueDate = d.date ? new Date(d.date.getTime() + 7 * 24 * 60 * 60 * 1000) : null;
+
+  await prisma.actionItem.create({
+    data: {
+      engagementId,
+      task,
+      owner,
+      dueDate,
+      status: "Por iniciar",
+      blocker: null,
+      comments: d.notes ?? null,
+    },
+  });
+
+  revalidatePath(`/${locale}/wizard/${engagementId}/tables/actions`);
+  revalidatePath(`/${locale}/wizard/${engagementId}/tables/decisions`);
+  revalidatePath(`/${locale}/wizard/${engagementId}/step-8-gobernanza`);
+}
+
 
 export default async function DecisionsPage({
   params,

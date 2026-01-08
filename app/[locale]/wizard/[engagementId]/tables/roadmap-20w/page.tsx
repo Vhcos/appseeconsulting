@@ -1,7 +1,8 @@
-//app/%5Blocale%5D/wizard/%5BengagementId%5D/tables/roadmap-20w/page.tsx
+// app/[locale]/wizard/[engagementId]/tables/roadmap-20w/page.tsx
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +29,7 @@ function sanitizeSegment(raw: string): string {
   return s;
 }
 
-function inferFromReferer(
-  referer: string | null,
-  locale: string,
-  engagementId: string
-): string {
+function inferFromReferer(referer: string | null, locale: string, engagementId: string): string {
   if (!referer) return "";
   try {
     const u = new URL(referer);
@@ -47,6 +44,100 @@ function inferFromReferer(
   } catch {
     return "";
   }
+}
+
+/** ===========================
+ * CSV IMPORT (robusto: ; o ,)
+ * =========================== */
+function detectDelimiter(headerLine: string): "," | ";" | "\t" {
+  const comma = (headerLine.match(/,/g) ?? []).length;
+  const semi = (headerLine.match(/;/g) ?? []).length;
+  const tab = (headerLine.match(/\t/g) ?? []).length;
+  if (semi >= comma && semi >= tab) return ";";
+  if (tab >= comma && tab >= semi) return "\t";
+  return ",";
+}
+
+function parseCsvLine(line: string, delim: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && ch === delim) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+
+    cur += ch;
+  }
+
+  out.push(cur);
+  return out.map((s) => s.trim());
+}
+
+function normalizeHeader(h: string): string {
+  return h.trim().toLowerCase();
+}
+
+type ImportRow = {
+  week?: string;
+  objective?: string;
+  keyActivities?: string;
+  deliverables?: string;
+  kpiFocus?: string;
+  ritual?: string;
+};
+
+function parseCsvToObjects(text: string): { rows: ImportRow[]; error?: string } {
+  const cleaned = text.replace(/^\uFEFF/, "");
+  const lines = cleaned
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (lines.length < 2) return { rows: [], error: "CSV vacío o sin filas." };
+
+  const delim = detectDelimiter(lines[0]);
+  const headers = parseCsvLine(lines[0], delim).map(normalizeHeader);
+
+  const rows: ImportRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i], delim);
+    const obj: Record<string, string> = {};
+    for (let j = 0; j < headers.length; j++) obj[headers[j]] = (cols[j] ?? "").trim();
+
+    // aliases
+    const week = obj["week"] || obj["semana"] || obj["n_semana"] || obj["numero_semana"] || "";
+    const objective = obj["objective"] || obj["objetivo"] || "";
+    const keyActivities =
+      obj["keyactivities"] ||
+      obj["key_activities"] ||
+      obj["actividades"] ||
+      obj["actividades_clave"] ||
+      obj["actividades clave"] ||
+      "";
+    const deliverables = obj["deliverables"] || obj["entregables"] || "";
+    const kpiFocus = obj["kpifocus"] || obj["kpi_focus"] || obj["kpi"] || obj["kpi_foco"] || obj["kpi foco"] || "";
+    const ritual = obj["ritual"] || "";
+
+    rows.push({ week, objective, keyActivities, deliverables, kpiFocus, ritual });
+  }
+
+  return { rows };
 }
 
 const ROADMAP_TEMPLATE: Array<{
@@ -249,15 +340,15 @@ export default async function Roadmap20wPage({
   const sp = (searchParams ? await searchParams : {}) as SearchParams;
 
   const fromParam = sanitizeSegment(readString(sp, "from"));
-  const fromRef = sanitizeSegment(
-    inferFromReferer((await headers()).get("referer"), locale, engagementId)
-  );
+  const fromRef = sanitizeSegment(inferFromReferer((await headers()).get("referer"), locale, engagementId));
   const from = fromParam || fromRef || "step-7-roadmap";
 
   const backHref =
-    from === "tables"
-      ? `/${locale}/wizard/${engagementId}/tables`
-      : `/${locale}/wizard/${engagementId}/${from}`;
+    from === "tables" ? `/${locale}/wizard/${engagementId}/tables` : `/${locale}/wizard/${engagementId}/${from}`;
+
+  const imported = readString(sp, "imported");
+  const failed = readString(sp, "failed");
+  const importError = readString(sp, "importError");
 
   const engagement = await prisma.engagement.findUnique({
     where: { id: engagementId },
@@ -267,9 +358,7 @@ export default async function Roadmap20wPage({
   if (!engagement) {
     return (
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <p className="text-sm">
-          {t(locale, "Engagement no encontrado.", "Engagement not found.")}
-        </p>
+        <p className="text-sm">{t(locale, "Engagement no encontrado.", "Engagement not found.")}</p>
         <Link className="text-sm text-indigo-600 hover:underline" href={`/${locale}/wizard`}>
           {t(locale, "Volver", "Back")}
         </Link>
@@ -296,6 +385,86 @@ export default async function Roadmap20wPage({
         ritual: w.ritual,
       })),
     });
+  }
+
+  async function importRoadmapCsv(formData: FormData) {
+    "use server";
+
+    const replaceAll = String(formData.get("replaceAll") ?? "") === "1";
+    if (replaceAll) {
+      await prisma.roadmapWeek.deleteMany({ where: { engagementId } });
+    }
+
+    const file = formData.get("csv") as File | null;
+    if (!file) {
+      const qs = new URLSearchParams({ imported: "0", failed: "0", importError: "No seleccionaste archivo." });
+      redirect(`/${locale}/wizard/${engagementId}/tables/roadmap-20w?from=${from}&${qs.toString()}`);
+    }
+
+    if (file.size > 2_000_000) {
+      const qs = new URLSearchParams({ imported: "0", failed: "0", importError: "CSV demasiado grande (max 2MB)." });
+      redirect(`/${locale}/wizard/${engagementId}/tables/roadmap-20w?from=${from}&${qs.toString()}`);
+    }
+
+    const ab = await file.arrayBuffer();
+    const text = new TextDecoder("utf-8").decode(ab);
+
+    const parsed = parseCsvToObjects(text);
+    if (parsed.error) {
+      const qs = new URLSearchParams({ imported: "0", failed: "0", importError: parsed.error });
+      redirect(`/${locale}/wizard/${engagementId}/tables/roadmap-20w?from=${from}&${qs.toString()}`);
+    }
+
+    const rows = parsed.rows ?? [];
+    if (!rows.length) {
+      const qs = new URLSearchParams({ imported: "0", failed: "0", importError: "No se detectaron filas." });
+      redirect(`/${locale}/wizard/${engagementId}/tables/roadmap-20w?from=${from}&${qs.toString()}`);
+    }
+
+    let ok = 0;
+    let fail = 0;
+
+    for (const r of rows) {
+      const week = String(r.week ?? "").trim();
+      if (!week) {
+        fail++;
+        continue;
+      }
+
+      const objective = String(r.objective ?? "").trim() || null;
+      const keyActivities = String(r.keyActivities ?? "").trim() || null;
+      const deliverables = String(r.deliverables ?? "").trim() || null;
+      const kpiFocus = String(r.kpiFocus ?? "").trim() || null;
+      const ritual = String(r.ritual ?? "").trim() || null;
+
+      const existing = await prisma.roadmapWeek.findFirst({
+        where: { engagementId, week },
+        select: { id: true },
+      });
+
+      if (existing) {
+        await prisma.roadmapWeek.update({
+          where: { id: existing.id },
+          data: { objective, keyActivities, deliverables, kpiFocus, ritual },
+        });
+      } else {
+        await prisma.roadmapWeek.create({
+          data: { engagementId, week, objective, keyActivities, deliverables, kpiFocus, ritual },
+        });
+      }
+
+      ok++;
+    }
+
+    revalidatePath(`/${locale}/wizard/${engagementId}/tables/roadmap-20w`);
+    revalidatePath(`/${locale}/wizard/${engagementId}/tables`);
+    revalidatePath(`/${locale}/wizard/${engagementId}/step-7-roadmap`);
+
+    const qs = new URLSearchParams();
+    qs.set("from", from);
+    qs.set("imported", String(ok));
+    qs.set("failed", String(fail));
+    redirect(`/${locale}/wizard/${engagementId}/tables/roadmap-20w?${qs.toString()}`);
   }
 
   async function upsertWeek(formData: FormData) {
@@ -330,9 +499,15 @@ export default async function Roadmap20wPage({
     revalidatePath(`/${locale}/wizard/${engagementId}/step-7-roadmap`);
   }
 
-  const weeks = await prisma.roadmapWeek.findMany({
+  const weeksDb = await prisma.roadmapWeek.findMany({
     where: { engagementId },
-    orderBy: [{ week: "asc" }],
+  });
+
+  const weeks = [...weeksDb].sort((a, b) => {
+    const na = Number(String(a.week ?? "").trim());
+    const nb = Number(String(b.week ?? "").trim());
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return String(a.week ?? "").localeCompare(String(b.week ?? ""));
   });
 
   return (
@@ -348,8 +523,8 @@ export default async function Roadmap20wPage({
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
             {t(
               locale,
-              "Esto es el calendario que le mostrarías a un cliente. Una semana = objetivo + actividades + entregables + KPI foco + ritual. Sin frases raras: solo claridad.",
-              "This is the calendar you’d show a client. One week = objective + activities + deliverables + KPI focus + ritual. No jargon—just clarity."
+              "Esto es el calendario que le mostrarías a un cliente. Una semana = objetivo + actividades + entregables + KPI foco + ritual.",
+              "This is the calendar you’d show a client. One week = objective + activities + deliverables + KPI focus + ritual.",
             )}
           </p>
         </div>
@@ -368,18 +543,108 @@ export default async function Roadmap20wPage({
         </div>
       </div>
 
-      {/* Video (placeholder) */}
+      {/* EXPORT / TEMPLATE */}
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-900">
-              {t(locale, "Mira esto antes de editar (2 min)", "Watch this before editing (2 min)")}
+              {t(locale, "Descargar tabla (XLSX) y template (CSV)", "Download table (XLSX) and template (CSV)")}
             </p>
             <p className="mt-1 text-xs text-slate-600">
               {t(
                 locale,
+                "Lo más conveniente aquí es XLSX (para que el cliente lo abra y lo edite fácil). Si vas a cargar de vuelta, usa el CSV template.",
+                "XLSX is best here (easy for clients to open/edit). If you’ll upload back, use the CSV template.",
+              )}
+            </p>
+          </div>
+
+          <div className="flex flex-col items-end gap-2">
+            <a
+              className="inline-flex items-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700"
+              href={`/api/wizard/${engagementId}/tables/roadmap-20w/export.xlsx`}
+            >
+              {t(locale, "Descargar XLSX", "Download XLSX")}
+            </a>
+
+            <a
+              className="text-xs font-semibold text-indigo-600 hover:underline"
+              href={`/api/wizard/${engagementId}/tables/roadmap-20w/template.csv`}
+            >
+              {t(locale, "Descargar template CSV", "Download CSV template")}
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* IMPORT CSV */}
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-900">{t(locale, "Importar roadmap (CSV)", "Import roadmap (CSV)")}</p>
+            <p className="mt-1 text-xs text-slate-600">
+              {t(
+                locale,
+                "Sube un CSV y actualiza semanas por número. Requerido: week/semana. Acepta separador coma o punto y coma (;).",
+                "Upload a CSV and update weeks by number. Required: week/semana. Accepts comma or semicolon (;).",
+              )}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {t(
+                locale,
+                "Header recomendado: week,objective,keyActivities,deliverables,kpiFocus,ritual",
+                "Recommended header: week,objective,keyActivities,deliverables,kpiFocus,ritual",
+              )}
+            </p>
+
+            {importError ? (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                {t(locale, "Error:", "Error:")} {importError}
+              </div>
+            ) : null}
+
+            {imported || failed ? (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                {t(locale, "Resultado:", "Result:")}{" "}
+                <span className="font-semibold">
+                  {t(locale, "Actualizadas", "Updated")}: {imported || "0"}
+                </span>{" "}
+                ·{" "}
+                <span className="font-semibold">
+                  {t(locale, "Fallidas", "Failed")}: {failed || "0"}
+                </span>
+              </div>
+            ) : null}
+          </div>
+
+          <form action={importRoadmapCsv} className="flex flex-col items-end gap-2">
+            <input
+              type="file"
+              name="csv"
+              accept=".csv,text/csv"
+              className="block w-[260px] text-xs text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-slate-900 hover:file:bg-slate-200"
+            />
+            <button className="inline-flex items-center rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-700">
+              {t(locale, "Importar CSV", "Import CSV")}
+            </button>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" name="replaceAll" value="1" />
+              {t(locale, "Reemplazar todo antes de importar", "Replace all before import")}
+            </label>
+          </form>
+        </div>
+      </section>
+
+      {/* Video (placeholder) */}
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-900">{t(locale, "Mira esto antes de editar (2 min)", "Watch this before editing (2 min)")}</p>
+            <p className="mt-1 text-xs text-slate-600">
+              {t(
+                locale,
                 "Cuando tengamos el video en YouTube, lo linkeamos aquí (cómo llenar sin perder tiempo).",
-                "When we have the YouTube video, we’ll link it here (how to fill fast, no wasted time)."
+                "When we have the YouTube video, we’ll link it here (how to fill fast, no wasted time).",
               )}
             </p>
           </div>
@@ -387,7 +652,7 @@ export default async function Roadmap20wPage({
             {t(
               locale,
               "Video aún no cargado. (Después lo reemplazamos por un embed de YouTube.)",
-              "Video not loaded yet. (Later we’ll replace with a YouTube embed.)"
+              "Video not loaded yet. (Later we’ll replace with a YouTube embed.)",
             )}
           </div>
         </div>
@@ -397,35 +662,21 @@ export default async function Roadmap20wPage({
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Editar una semana", "Edit one week")}
-            </h2>
+            <h2 className="text-sm font-semibold text-slate-900">{t(locale, "Editar una semana", "Edit one week")}</h2>
             <p className="mt-1 text-xs text-slate-600">
-              {t(
-                locale,
-                "No escribas perfecto. Es para que cualquiera entienda qué pasa esa semana.",
-                "Don’t write perfect. It’s so anyone understands what happens that week."
-              )}
+              {t(locale, "No escribas perfecto. Es para que cualquiera entienda qué pasa esa semana.", "Don’t write perfect. It’s so anyone understands what happens that week.")}
             </p>
           </div>
 
           <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
             <div className="font-semibold">{t(locale, "Tip", "Tip")}</div>
-            <div className="mt-1">
-              {t(
-                locale,
-                "Entregables = cosas concretas. Si no se puede “mostrar”, no es entregable.",
-                "Deliverables = tangible outputs. If you can’t show it, it’s not a deliverable."
-              )}
-            </div>
+            <div className="mt-1">{t(locale, "Entregables = cosas concretas. Si no se puede “mostrar”, no es entregable.", "Deliverables = tangible outputs. If you can’t show it, it’s not a deliverable.")}</div>
           </div>
         </div>
 
         <form action={upsertWeek} className="mt-4 grid gap-4 md:grid-cols-2">
           <div>
-            <label className="text-xs font-semibold text-slate-800">
-              {t(locale, "Semana", "Week")}
-            </label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Semana", "Week")}</label>
             <select
               name="week"
               defaultValue="1"
@@ -443,9 +694,7 @@ export default async function Roadmap20wPage({
           </div>
 
           <div>
-            <label className="text-xs font-semibold text-slate-800">
-              {t(locale, "Ritual", "Ritual")}
-            </label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Ritual", "Ritual")}</label>
             <input
               name="ritual"
               placeholder={t(locale, "Ej: Comité semanal (45–60 min)", "Ex: Weekly committee (45–60 min)")}
@@ -454,9 +703,7 @@ export default async function Roadmap20wPage({
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-800">
-              {t(locale, "Objetivo", "Objective")}
-            </label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Objetivo", "Objective")}</label>
             <input
               name="objective"
               placeholder={t(locale, "Ej: Roadmap aprobado + sistema de ejecución v1", "Ex: Roadmap approved + execution system v1")}
@@ -465,9 +712,7 @@ export default async function Roadmap20wPage({
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-800">
-              {t(locale, "Actividades clave", "Key activities")}
-            </label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Actividades clave", "Key activities")}</label>
             <textarea
               name="keyActivities"
               rows={3}
@@ -477,9 +722,7 @@ export default async function Roadmap20wPage({
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-800">
-              {t(locale, "Entregables", "Deliverables")}
-            </label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "Entregables", "Deliverables")}</label>
             <textarea
               name="deliverables"
               rows={2}
@@ -489,9 +732,7 @@ export default async function Roadmap20wPage({
           </div>
 
           <div className="md:col-span-2">
-            <label className="text-xs font-semibold text-slate-800">
-              {t(locale, "KPI foco", "KPI focus")}
-            </label>
+            <label className="text-xs font-semibold text-slate-800">{t(locale, "KPI foco", "KPI focus")}</label>
             <input
               name="kpiFocus"
               placeholder={t(locale, "Ej: % iniciativas con dueño/fecha", "Ex: % initiatives with owner/date")}
@@ -500,10 +741,7 @@ export default async function Roadmap20wPage({
           </div>
 
           <div className="md:col-span-2 flex items-center gap-3">
-            <button
-              type="submit"
-              className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
+            <button type="submit" className="inline-flex items-center rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
               {t(locale, "Guardar semana", "Save week")}
             </button>
 
@@ -521,20 +759,12 @@ export default async function Roadmap20wPage({
         </form>
       </section>
 
-      {/* Tabla calcada */}
+      {/* Tabla */}
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Roadmap presentado al cliente", "Client-facing roadmap")}
-            </h3>
-            <p className="mt-1 text-xs text-slate-600">
-              {t(
-                locale,
-                "Estructura fija. Cambia el contenido, no el formato.",
-                "Fixed structure. Content changes, not the format."
-              )}
-            </p>
+            <h3 className="text-sm font-semibold text-slate-900">{t(locale, "Roadmap presentado al cliente", "Client-facing roadmap")}</h3>
+            <p className="mt-1 text-xs text-slate-600">{t(locale, "Estructura fija. Cambia el contenido, no el formato.", "Fixed structure. Content changes, not the format.")}</p>
           </div>
         </div>
 
@@ -547,22 +777,37 @@ export default async function Roadmap20wPage({
                 <th className="py-2 pr-3">{t(locale, "Actividades clave", "Key activities")}</th>
                 <th className="py-2 pr-3">{t(locale, "Entregables", "Deliverables")}</th>
                 <th className="py-2 pr-3">{t(locale, "KPI foco", "KPI focus")}</th>
-                <th className="py-2 pr-0">{t(locale, "Ritual", "Ritual")}</th>
+                <th className="py-2 pr-3">{t(locale, "Ritual", "Ritual")}</th>
+                <th className="py-2 pr-0 text-right">{t(locale, "Acción", "Action")}</th>
               </tr>
             </thead>
             <tbody>
-              {weeks.map((w) => (
-                <tr key={w.id} className="border-b border-slate-100 align-top">
-                  <td className="py-3 pr-3 whitespace-nowrap font-semibold text-slate-900">
-                    {w.week}
+              {weeks.length === 0 ? (
+                <tr>
+                  <td className="py-6 text-sm text-slate-500" colSpan={7}>
+                    {t(locale, "Aún no hay roadmap. (Raro: debería haberse creado el template.)", "No roadmap yet. (Template should have been created.)")}
                   </td>
-                  <td className="py-3 pr-3 text-slate-900">{w.objective ?? "—"}</td>
-                  <td className="py-3 pr-3 text-slate-800 whitespace-pre-line">{w.keyActivities ?? "—"}</td>
-                  <td className="py-3 pr-3 text-slate-800 whitespace-pre-line">{w.deliverables ?? "—"}</td>
-                  <td className="py-3 pr-3 text-slate-800">{w.kpiFocus ?? "—"}</td>
-                  <td className="py-3 pr-0 text-slate-800">{w.ritual ?? "—"}</td>
                 </tr>
-              ))}
+              ) : (
+                weeks.map((w) => (
+                  <tr key={w.id} className="border-b border-slate-100 align-top">
+                    <td className="py-3 pr-3 whitespace-nowrap font-semibold text-slate-900">{w.week}</td>
+                    <td className="py-3 pr-3 text-slate-900">{w.objective ?? "—"}</td>
+                    <td className="py-3 pr-3 text-slate-800 whitespace-pre-line">{w.keyActivities ?? "—"}</td>
+                    <td className="py-3 pr-3 text-slate-800 whitespace-pre-line">{w.deliverables ?? "—"}</td>
+                    <td className="py-3 pr-3 text-slate-800">{w.kpiFocus ?? "—"}</td>
+                    <td className="py-3 pr-3 text-slate-800">{w.ritual ?? "—"}</td>
+                    <td className="py-3 pr-0 text-right">
+                      <Link
+                        className="text-xs font-semibold text-indigo-600 hover:underline"
+                        href={`/${locale}/wizard/${engagementId}/tables/roadmap-20w/${w.id}?from=${from}`}
+                      >
+                        {t(locale, "Editar", "Edit")}
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

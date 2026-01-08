@@ -23,12 +23,24 @@ function sanitizeSegment(raw: string | null): string | null {
   return s;
 }
 
+const PERSPECTIVE_ORDER: BscPerspective[] = [
+  "FINANCIAL",
+  "CUSTOMER",
+  "INTERNAL_PROCESS",
+  "LEARNING_GROWTH",
+];
+
+function perspectiveRank(p: BscPerspective) {
+  const i = PERSPECTIVE_ORDER.indexOf(p);
+  return i === -1 ? 999 : i;
+}
+
 function perspectiveLabel(locale: string, p: BscPerspective) {
   const map: Record<BscPerspective, { es: string; en: string }> = {
     FINANCIAL: { es: "Finanzas", en: "Financial" },
     CUSTOMER: { es: "Clientes", en: "Customer" },
-    INTERNAL_PROCESS: { es: "Procesos internos", en: "Internal process" },
-    LEARNING_GROWTH: { es: "Aprendizaje y crecimiento", en: "Learning & growth" },
+    INTERNAL_PROCESS: { es: "Operación", en: "Operations" },
+    LEARNING_GROWTH: { es: "Procesos", en: "Processes" },
   };
   return t(locale, map[p].es, map[p].en);
 }
@@ -127,7 +139,7 @@ export default async function CheckInKpisPage({
     );
   }
 
-  const kpis = await prisma.kpi.findMany({
+  const rawKpis = await prisma.kpi.findMany({
     where: { engagementId },
     select: {
       id: true,
@@ -139,7 +151,18 @@ export default async function CheckInKpisPage({
       targetValue: true,
       targetText: true,
     },
-    orderBy: [{ perspective: "asc" }, { nameEs: "asc" }],
+  });
+
+  // Orden fijo: Finanzas → Clientes → Operación → Procesos
+  const kpis = [...rawKpis].sort((a, b) => {
+    const ra = perspectiveRank(a.perspective);
+    const rb = perspectiveRank(b.perspective);
+    if (ra !== rb) return ra - rb;
+    const an = (a.nameEs ?? "").toLowerCase();
+    const bn = (b.nameEs ?? "").toLowerCase();
+    if (an < bn) return -1;
+    if (an > bn) return 1;
+    return a.id.localeCompare(b.id);
   });
 
   const ids = kpis.map((k) => k.id);
@@ -231,6 +254,14 @@ export default async function CheckInKpisPage({
   if (activeAccountId) qsBase.set("accountId", activeAccountId);
   const baseQs = qsBase.toString();
 
+  const grouped = new Map<BscPerspective, typeof kpis>();
+  for (const p of PERSPECTIVE_ORDER) grouped.set(p, []);
+  for (const k of kpis) {
+    const arr = grouped.get(k.perspective) ?? [];
+    arr.push(k);
+    grouped.set(k.perspective, arr);
+  }
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -281,85 +312,101 @@ export default async function CheckInKpisPage({
         {kpis.length === 0 ? (
           <p className="mt-6 text-xs text-slate-600">{t(locale, "No hay KPIs creados aún.", "No KPIs yet.")}</p>
         ) : (
-          <form action={save} className="mt-6 space-y-4">
+          <form action={save} className="mt-6 space-y-6">
             <input type="hidden" name="periodKey" value={periodKey} />
             <input type="hidden" name="accountId" value={activeAccountId ?? ""} />
 
-            <div className="grid gap-3 md:grid-cols-2">
-              {kpis.map((k) => {
-                const current = byKey.get(`${k.id}:${periodKey}`);
-                const prev = byKey.get(`${k.id}:${prevKey}`);
+            {PERSPECTIVE_ORDER.map((p) => {
+              const list = grouped.get(p) ?? [];
+              if (list.length === 0) return null;
 
-                const prevNum = toNumber(prev?.value?.toString());
-                const curNum = toNumber(current?.value?.toString());
-                const targetNum = k.targetValue ? Number(String(k.targetValue)) : null;
-
-                const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
-
-                const badge = !current
-                  ? { txt: t(locale, "Sin dato", "No data"), cls: "text-slate-500" }
-                  : current.isGreen
-                    ? { txt: t(locale, "Verde", "Green"), cls: "text-emerald-700 font-semibold" }
-                    : { txt: t(locale, "Rojo", "Red"), cls: "text-rose-700 font-semibold" };
-
-                return (
-                  <div key={k.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">{t(locale, k.nameEs, k.nameEn)}</div>
-                        <div className="mt-1 text-[11px] text-slate-600">
-                          {perspectiveLabel(locale, k.perspective)}
-                          {k.unit ? ` · ${k.unit}` : ""}
-                        </div>
-
-                        <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
-                          <div>
-                            {t(locale, "Prev:", "Prev:")}{" "}
-                            <span className="font-semibold">{prev?.value ? String(prev.value) : "—"}</span>
-                            {delta != null ? ` · Δ ${delta}` : ""}
-                          </div>
-                          <div>
-                            {t(locale, "Target:", "Target:")}{" "}
-                            <span className="font-semibold">{targetNum != null ? String(targetNum) : "—"}</span>
-                            {k.targetText ? ` · ${k.targetText}` : ""}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="text-right text-[11px]">
-                        <span className={badge.cls}>{badge.txt}</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 md:grid-cols-3">
-                      <div className="md:col-span-1">
-                        <label className="block text-[11px] font-semibold text-slate-700">
-                          {t(locale, "Valor", "Value")}
-                        </label>
-                        <input
-                          name={`value_${k.id}`}
-                          defaultValue={current?.value ? String(current.value) : ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                          placeholder={t(locale, "Ej: 12.5", "e.g. 12.5")}
-                        />
-                      </div>
-
-                      <div className="md:col-span-2">
-                        <label className="block text-[11px] font-semibold text-slate-700">
-                          {t(locale, "Nota", "Note")}
-                        </label>
-                        <input
-                          name={`note_${k.id}`}
-                          defaultValue={current?.note ?? ""}
-                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-                          placeholder={t(locale, "Contexto, fuente, comentarios…", "Context, source, comments…")}
-                        />
-                      </div>
+              return (
+                <section key={p} className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold text-slate-900">{perspectiveLabel(locale, p)}</h2>
+                    <div className="text-[11px] text-slate-500">
+                      {t(locale, "Orden fijo:", "Fixed order:")} {t(locale, "Finanzas → Clientes → Operación → Procesos", "Financial → Customer → Ops → Processes")}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {list.map((k) => {
+                      const current = byKey.get(`${k.id}:${periodKey}`);
+                      const prev = byKey.get(`${k.id}:${prevKey}`);
+
+                      const prevNum = toNumber(prev?.value?.toString());
+                      const curNum = toNumber(current?.value?.toString());
+                      const targetNum = k.targetValue ? Number(String(k.targetValue)) : null;
+
+                      const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
+
+                      const badge = !current
+                        ? { txt: t(locale, "Sin dato", "No data"), cls: "text-slate-500" }
+                        : current.isGreen
+                          ? { txt: t(locale, "Verde", "Green"), cls: "text-emerald-700 font-semibold" }
+                          : { txt: t(locale, "Rojo", "Red"), cls: "text-rose-700 font-semibold" };
+
+                      return (
+                        <div key={k.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">{t(locale, k.nameEs, k.nameEn)}</div>
+                              <div className="mt-1 text-[11px] text-slate-600">
+                                {perspectiveLabel(locale, k.perspective)}
+                                {k.unit ? ` · ${k.unit}` : ""}
+                              </div>
+
+                              <div className="mt-2 grid gap-1 text-[11px] text-slate-600">
+                                <div>
+                                  {t(locale, "Prev:", "Prev:")}{" "}
+                                  <span className="font-semibold">{prev?.value ? String(prev.value) : "—"}</span>
+                                  {delta != null ? ` · Δ ${delta}` : ""}
+                                </div>
+                                <div>
+                                  {t(locale, "Target:", "Target:")}{" "}
+                                  <span className="font-semibold">{targetNum != null ? String(targetNum) : "—"}</span>
+                                  {k.targetText ? ` · ${k.targetText}` : ""}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right text-[11px]">
+                              <span className={badge.cls}>{badge.txt}</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid gap-2 md:grid-cols-3">
+                            <div className="md:col-span-1">
+                              <label className="block text-[11px] font-semibold text-slate-700">
+                                {t(locale, "Valor", "Value")}
+                              </label>
+                              <input
+                                name={`value_${k.id}`}
+                                defaultValue={current?.value ? String(current.value) : ""}
+                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                placeholder={t(locale, "Ej: 12.5", "e.g. 12.5")}
+                              />
+                            </div>
+
+                            <div className="md:col-span-2">
+                              <label className="block text-[11px] font-semibold text-slate-700">
+                                {t(locale, "Nota", "Note")}
+                              </label>
+                              <input
+                                name={`note_${k.id}`}
+                                defaultValue={current?.note ?? ""}
+                                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                                placeholder={t(locale, "Contexto, fuente, comentarios…", "Context, source, comments…")}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
 
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>

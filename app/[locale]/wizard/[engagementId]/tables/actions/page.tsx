@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getHelpVideo } from "@/lib/see/helpVideos";
@@ -6,9 +7,36 @@ import { getHelpVideo } from "@/lib/see/helpVideos";
 export const dynamic = "force-dynamic";
 
 type ParamsPromise = Promise<{ locale: string; engagementId: string }>;
+type SearchParamsPromise = Promise<Record<string, string | string[] | undefined>>;
 
 function t(locale: string, es: string, en: string) {
   return locale === "en" ? en : es;
+}
+
+function readString(sp: Record<string, string | string[] | undefined>, key: string) {
+  const v = sp[key];
+  if (!v) return "";
+  return Array.isArray(v) ? (v[0] ?? "") : v;
+}
+
+function sanitizeSegment(seg: string) {
+  const s = (seg ?? "").trim();
+  if (!s) return "";
+  if (!/^[a-zA-Z0-9\-\/]+$/.test(s)) return "";
+  return s;
+}
+
+function inferFromReferer(referer: string | null, locale: string, engagementId: string) {
+  if (!referer) return "";
+  try {
+    const u = new URL(referer);
+    const prefix = `/${locale}/wizard/${engagementId}/`;
+    if (!u.pathname.startsWith(prefix)) return "";
+    const rest = u.pathname.slice(prefix.length);
+    return rest.split("/")[0] ?? "";
+  } catch {
+    return "";
+  }
 }
 
 function fmtDate(d?: Date | null) {
@@ -47,8 +75,24 @@ async function deleteActionItem(id: string, engagementId: string, locale: string
   revalidatePath(`/${locale}/wizard/${engagementId}/tables/actions`);
 }
 
-export default async function ActionsPage({ params }: { params: ParamsPromise }) {
+export default async function ActionsPage({
+  params,
+  searchParams,
+}: {
+  params: ParamsPromise;
+  searchParams?: SearchParamsPromise;
+}) {
   const { locale, engagementId } = await params;
+  const sp = (searchParams ? await searchParams : {}) as Record<string, string | string[] | undefined>;
+
+  const fromParam = sanitizeSegment(readString(sp, "from"));
+  const fromRef = sanitizeSegment(inferFromReferer((await headers()).get("referer"), locale, engagementId));
+  const from = fromParam || fromRef || "tables";
+
+  const backHref =
+    from === "tables"
+      ? `/${locale}/wizard/${engagementId}/tables`
+      : `/${locale}/wizard/${engagementId}/${from}`;
 
   const help = getHelpVideo(locale, "actions");
 
@@ -57,9 +101,13 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
     orderBy: [{ dueDate: "desc" }, { id: "desc" }],
   });
 
-  const headers = [
+  const peopleSet = new Set<string>();
+  rows.forEach((r) => (r.owner ?? "").trim() && peopleSet.add((r.owner ?? "").trim()));
+  const people = Array.from(peopleSet).sort((a, b) => a.localeCompare(b));
+
+  const headersRow = [
     t(locale, "Tarea", "Task"),
-    t(locale, "Dueño", "Owner"),
+    t(locale, "Responsable", "Responsible"),
     t(locale, "Fecha", "Date"),
     t(locale, "Estado", "Status"),
     t(locale, "Bloqueador", "Blocker"),
@@ -69,67 +117,61 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      {/* FIX: WizardStepsNav usa currentStep, no activeKey */}
-
-      <div className="mt-4 flex items-start justify-between gap-4">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {t(locale, "Gobernanza · Seguimiento", "Governance · Follow-up")}
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900">
-            {t(locale, "Acciones", "Actions")}
-          </h1>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900">{t(locale, "Acciones", "Actions")}</h1>
           <p className="mt-1 text-sm text-slate-600">
             {t(
               locale,
-              "Esto es la lista semanal: qué se hace, quién lo hace y qué lo está frenando.",
-              "This is the weekly list: what gets done, who owns it, and what's blocking it."
+              "Lista semanal: qué se hace, quién es responsable y qué lo está frenando.",
+              "Weekly list: what gets done, who is responsible, and what's blocking it."
             )}
           </p>
         </div>
 
-        <Link
-          href={`/${locale}/wizard/${engagementId}`}
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
-        >
+        <Link href={backHref} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
           ← {t(locale, "Volver", "Back")}
         </Link>
       </div>
 
-      <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-slate-900">
-              {t(locale, "Mira esto antes de llenar", "Watch this before filling")}
-            </div>
+            <div className="text-sm font-semibold text-slate-900">{t(locale, "Mira esto antes de llenar", "Watch this before filling")}</div>
             <div className="mt-1 text-xs text-slate-600">
-              {t(locale, "Tiempo estimado:", "Estimated time:")}{" "}
-              <span className="font-medium">{help.eta ?? "-"}</span>
+              {t(locale, "Tiempo estimado:", "Estimated time:")} <span className="font-medium">{help.eta ?? "-"}</span>
             </div>
           </div>
 
           <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
-            {t(locale, "Tip:", "Tip:")}{" "}
-            {t(locale, "una acción = algo que se puede hacer esta semana.", "one action = something doable this week.")}
+            {t(locale, "Tip:", "Tip:")} {t(locale, "una acción = algo que se puede ejecutar esta semana.", "one action = something doable this week.")}
           </div>
         </div>
 
-        <div className="mt-3 aspect-video w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+        <div className="mt-3 overflow-hidden rounded-xl border border-dashed border-slate-300">
           {help.youtubeId ? (
-            <iframe
-              className="h-full w-full"
-              src={help.embedUrl}
-              title={help.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+            <div className="aspect-video w-full">
+              <iframe
+                className="h-full w-full"
+                src={`https://www.youtube-nocookie.com/embed/${help.youtubeId}`}
+                title={help.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
           ) : (
-            <div className="flex h-full w-full items-center justify-center px-6 text-center text-sm text-slate-600">
-              {t(
-                locale,
-                "Video aún no cargado. Cuando tengas el link de YouTube, agregamos el youtubeId en lib/see/helpVideos.ts.",
-                "Video not set yet. Once you have the YouTube link, we add the youtubeId in lib/see/helpVideos.ts."
-              )}
+            <div className="p-4 text-sm text-slate-600">
+              <div className="font-medium text-slate-800">{t(locale, "Video aún no cargado.", "Video not set yet.")}</div>
+              <div className="mt-1">
+                {t(
+                  locale,
+                  "Cuando tengas el video en YouTube, agrega el youtubeId en lib/see/helpVideos.ts (actions).",
+                  "When you have the video on YouTube, add the youtubeId in lib/see/helpVideos.ts (actions)."
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -137,17 +179,18 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
 
       <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-slate-900">
-            {t(locale, "Nueva acción", "New action")}
-          </h2>
+          <h2 className="text-base font-semibold text-slate-900">{t(locale, "Nueva acción", "New action")}</h2>
 
-          <Link
-            href={`/${locale}/wizard/${engagementId}/tables`}
-            className="text-sm font-medium text-slate-600 hover:text-slate-900"
-          >
+          <Link href={`/${locale}/wizard/${engagementId}/tables`} className="text-sm font-medium text-slate-600 hover:text-slate-900">
             {t(locale, "Ver todas las tablas", "See all tables")}
           </Link>
         </div>
+
+        <datalist id="people-actions">
+          {people.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
 
         <form action={createActionItem.bind(null, engagementId, locale)} className="mt-3 grid gap-3">
           <div className="grid gap-2 md:grid-cols-3">
@@ -163,20 +206,23 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
 
             <label>
               <div className="text-sm font-medium text-slate-900">{t(locale, "Estado", "Status")}</div>
-              <input
-                name="status"
-                placeholder={t(locale, "Ej: Por iniciar / En curso / Listo", "E.g., Not started / In progress / Done")}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-              />
+              <select name="status" defaultValue="Por iniciar" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                <option value="Por iniciar">{t(locale, "Por iniciar", "Not started")}</option>
+                <option value="En curso">{t(locale, "En curso", "In progress")}</option>
+                <option value="Bloqueado">{t(locale, "Bloqueado", "Blocked")}</option>
+                <option value="Listo">{t(locale, "Listo", "Done")}</option>
+                <option value="Cancelado">{t(locale, "Cancelado", "Cancelled")}</option>
+              </select>
             </label>
           </div>
 
           <div className="grid gap-2 md:grid-cols-3">
             <label>
-              <div className="text-sm font-medium text-slate-900">{t(locale, "Dueño", "Owner")}</div>
+              <div className="text-sm font-medium text-slate-900">{t(locale, "Responsable", "Responsible")}</div>
               <input
                 name="owner"
-                placeholder={t(locale, "Ej: Juan (Operaciones)", "E.g., Juan (Operations)")}
+                list="people-actions"
+                placeholder={t(locale, "Ej: Juan (Operaciones)", "E.g., John (Operations)")}
                 className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
               />
             </label>
@@ -207,10 +253,7 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
           </label>
 
           <div className="flex gap-2">
-            <button
-              type="submit"
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
+            <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
               {t(locale, "Guardar acción", "Save action")}
             </button>
           </div>
@@ -229,7 +272,7 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
           <table className="min-w-full border-collapse text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {headers.map((h, i) => (
+                {headersRow.map((h, i) => (
                   <th
                     key={`${i}-${h}`}
                     className="whitespace-nowrap border-b border-slate-200 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
@@ -261,7 +304,7 @@ export default async function ActionsPage({ params }: { params: ParamsPromise })
 
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={headers.length} className="px-4 py-6 text-center text-sm text-slate-600">
+                  <td colSpan={headersRow.length} className="px-4 py-6 text-center text-sm text-slate-600">
                     {t(locale, "Aún no hay acciones. Crea la primera arriba.", "No actions yet. Create the first one above.")}
                   </td>
                 </tr>
