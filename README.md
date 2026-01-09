@@ -434,3 +434,101 @@ Si aparece `Encountered two children with the same key`, revisar `.map()` usando
 ---
 
 ---
+## Check-in (KPIs / Initiatives / Summary / Export)
+
+Este ciclo implementa un “Check-in” mensual (por período YYYY-MM) con soporte de Scope (GLOBAL o por Unidad/Account) y salida a PDF.
+
+### Conceptos clave
+- **periodKey**: string `YYYY-MM` (ej: `2026-01`)
+- **scopeKey**:
+  - `GLOBAL` si no hay unidad
+  - `UNIT:<accountId>` si se filtra por unidad
+- **Evaluado**: valor calculado según la regla (basis) del KPI:
+  - `A` = Acumulado (Prom. YTD)
+  - `L` = Últimos 12 meses (Prom.)
+- **Estado** (semáforo): se calcula comparando **Evaluado vs Meta** según la dirección del KPI:
+  - `HIGHER_IS_BETTER` => evaluado >= meta
+  - `LOWER_IS_BETTER` => evaluado <= meta
+
+### 1) Check-in KPIs
+Ruta:
+- `/[locale]/wizard/[engagementId]/check-in/kpis?period=YYYY-MM&accountId?=...`
+
+Qué hace:
+- Permite ingresar el **dato mensual** (raw) por KPI y nota.
+- Calcula **Evaluado** usando series históricas (hasta 12 meses).
+- Recalcula y guarda `isGreen` del mes **en base a Evaluado**.
+- Muestra mini-chart por KPI con serie y target.
+- Tablero por perspectiva con orden fijo: Finanzas → Clientes → Operación → Procesos.
+
+Persistencia:
+- `kpiValue` se upserta por `kpiId + periodKey + scopeKey`.
+- `isGreen` se recalcula post-guardado usando la serie y el basis.
+
+Helpers:
+- `buildMonthKeysBack(periodKey, 12)`
+- `computeEvaluatedSeries(basis, series)`
+- `computeEvaluatedValue(basis, series, periodKey)`
+
+### 2) Check-in Initiatives
+Ruta:
+- `/[locale]/wizard/[engagementId]/check-in/initiatives?period=YYYY-MM&accountId?=...`
+
+Qué hace:
+- Registra snapshot del período: progreso %, status, notas, bloqueos, evidencias (URLs).
+- Actualiza `initiative.status` y `initiative.notes`.
+- Inserta evidencias como registros (createMany) con label `[period] scope`.
+
+Persistencia snapshot:
+- Se guarda en `wizardProgress` con stepKey:
+  - `checkin-initiatives:${scopeKey}:${periodKey}`
+- Estructura:
+  - `{ items: [{ initiativeId, progressPct, status, notes, blockers, evidenceUrls }] }`
+
+### 3) Check-in Summary
+Ruta:
+- `/[locale]/wizard/[engagementId]/check-in/summary?period=YYYY-MM&accountId?=...`
+
+Qué hace:
+- Resume:
+  - **KPIs diff** (comparación entre período actual y anterior)
+  - **Initiatives diff** (cambios detectados contra snapshot anterior)
+- Permite guardar un resumen ejecutivo manual:
+  - Highlights (bullets)
+  - Next actions
+
+Persistencia resumen:
+- `wizardProgress` con stepKey:
+  - `checkin-summary:${scopeKey}:${periodKey}`
+- Estructura:
+  - `{ highlights: string, nextActions: string }`
+
+### 4) Export PDF (Summary)
+Endpoint:
+- `/api/export/summary/pdf?locale=es&engagementId=<id>&period=YYYY-MM&accountId?=...`
+
+Notas importantes:
+- Los endpoints de Next App Router bajo `/app/api/...` NO deben ir prefijados por `/{locale}`.
+  - Correcto: `/api/export/...`
+  - Incorrecto: `/{locale}/api/export/...`
+
+Se corrigió el link del botón en Summary para apuntar a `/api/...` (sin `/${locale}`).
+
+Validación rápida:
+- `curl -I "http://localhost:3000/api/export/summary/pdf?locale=es&engagementId=...&period=2026-01"`
+  debe responder `200` y `content-type: application/pdf`.
+
+### Problemas/pitfalls detectados
+- **zsh: no matches found** al usar rutas con corchetes `[]` en terminal.
+  - Solución: envolver en comillas, por ejemplo:
+    - `"app/[locale]/wizard/[engagementId]/check-in/summary/page.tsx"`
+
+- **Next.js error: Event handlers cannot be passed to Client Component props**
+  - Ocurre cuando se intenta meter `onChange` u otros handlers desde Server Components.
+  - Regla: si necesitas interactividad real, encapsular esa parte en un Client Component.
+
+### Estado actual
+- Flujo Check-in operativo:
+  - KPIs → Initiatives → Summary
+  - Summary exportable a PDF vía `/api/export/summary/pdf`
+- Scope por unidad soportado vía `accountId`.

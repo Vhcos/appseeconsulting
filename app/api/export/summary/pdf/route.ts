@@ -355,16 +355,27 @@ export async function GET(req: NextRequest) {
       nextActions: summarySaved.nextActions || "",
     });
 
-    const buffer = await pdf(doc).toBuffer();
+    const raw = await pdf(doc).toBuffer();
 
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="checkin-summary-${safePeriod}-${scopeKey}.pdf"`,
-        "Cache-Control": "no-store",
-      },
-    });
+// Normalizamos para que TS quede feliz en build (BodyInit)
+let body: BodyInit;
+if (raw && typeof (raw as any).getReader === "function") {
+  // raw es ReadableStream -> lo convertimos a Uint8Array
+  const ab = await new Response(raw as any).arrayBuffer();
+  body = new Uint8Array(ab);
+} else {
+  // raw ya es Buffer/Uint8Array/ArrayBuffer según runtime
+  body = raw as unknown as BodyInit;
+}
+
+return new NextResponse(body, {
+  status: 200,
+  headers: {
+    "Content-Type": "application/pdf",
+    // deja tus headers tal cual estaban
+  },
+});
+
   } catch (err: any) {
     console.error("[export summary pdf] error:", err);
     const msg = err?.message || "Unknown error";
