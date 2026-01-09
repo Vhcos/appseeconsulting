@@ -1,3 +1,4 @@
+//app/[locale]/wizard/[engagementId]/check-in/kpis/page.tsx
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -5,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import CheckInNav from "@/components/see/CheckInNav";
 import KpiMiniChart from "@/components/see/KpiMiniChart";
 import { KpiDirection, BscPerspective, Prisma, KpiBasis } from "@prisma/client";
-import Sparkline from "@/components/see/Sparkline";
 import { buildMonthKeysBack, computeEvaluatedSeries, computeEvaluatedValue } from "@/lib/see/kpiEval";
 
 export const dynamic = "force-dynamic";
@@ -469,7 +469,7 @@ export default async function CheckInKpisPage({
                           <th className="px-4 py-3 w-[360px]">{t(locale, "KPI", "KPI")}</th>
                           <th className="px-4 py-3 w-[90px]">{t(locale, "Prev", "Prev")}</th>
                           <th className="px-4 py-3 w-[140px]">{t(locale, "Valor (mes)", "Monthly value")}</th>
-                          <th className="px-4 py-3 w-[90px]">Δ</th>
+                          <th className="px-4 py-3 w-[110px]">{t(locale, "Δ vs meta", "Δ vs target")}</th>
                           <th className="px-4 py-3 w-[140px]">{t(locale, "Evaluado", "Evaluated")}</th>
                           <th className="px-4 py-3 w-[140px]">{t(locale, "Meta", "Target")}</th>
                           <th className="px-4 py-3 w-[110px]">{t(locale, "Estado", "Status")}</th>
@@ -487,11 +487,12 @@ export default async function CheckInKpisPage({
 
                           const targetNum = k.targetValue == null ? null : Number(String(k.targetValue));
                           const safeTargetNum = Number.isFinite(targetNum) ? targetNum : null;
-
-                          const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
+                          const evalSeries = evaluatedSeriesByKpi.get(k.id) ?? [];
 
                           const evaluatedNow = evaluatedNowByKpi.get(k.id) ?? null;
-                          const evalSeries = evaluatedSeriesByKpi.get(k.id) ?? [];
+
+                           // Δ = Evaluado - Meta
+                          const delta = evaluatedNow != null && safeTargetNum != null ? evaluatedNow - safeTargetNum : null;
 
                           const isGreenEval = computeIsGreen(k.direction, evaluatedNow, safeTargetNum);
 
@@ -519,9 +520,11 @@ export default async function CheckInKpisPage({
                                   </div>
                                   <div className="shrink-0">
                                     <KpiMiniChart
-                                      series={series}
-                                      evaluatedSeries={evalSeries}
-                                      targetValue={safeTargetNum}
+                                       series={series}
+                                       evaluatedSeries={evalSeries}
+                                       targetValue={safeTargetNum}
+                                       width={190}
+                                       height={54}
                                     />
                                   </div>
                                 </div>

@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",
+    "@sparticuz/chromium-min": "^143.0.4",
     "exceljs": "^4.4.0",
     "luxon": "^3.7.2",
     "next": "16.1.1",
     "next-intl": "^4.6.1",
+    "puppeteer-core": "^24.34.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.6.0",

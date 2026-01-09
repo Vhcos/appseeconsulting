@@ -3,7 +3,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CheckInNav from "@/components/see/CheckInNav";
-import { BscPerspective } from "@prisma/client";
+import { BscPerspective, KpiDirection, KpiBasis } from "@prisma/client";
+import { buildMonthKeysBack, computeEvaluatedValue } from "@/lib/see/kpiEval";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,16 @@ function toNum(x: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function computeIsOk(direction: KpiDirection, evaluated: number | null, target: number | null) {
+  if (evaluated == null) return false;
+  if (target == null) return true;
+  return direction === "HIGHER_IS_BETTER" ? evaluated >= target : evaluated <= target;
+}
+
+function pill(cls: string) {
+  return ["inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold", cls].join(" ");
+}
+
 function btnBase() {
   return [
     "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-xs font-semibold",
@@ -116,17 +127,23 @@ function perspectiveLabel(locale: string, p: BscPerspective) {
   const map: Record<BscPerspective, { es: string; en: string }> = {
     FINANCIAL: { es: "Finanzas", en: "Financial" },
     CUSTOMER: { es: "Clientes", en: "Customer" },
-    INTERNAL_PROCESS: { es: "Procesos internos", en: "Internal process" },
-    LEARNING_GROWTH: { es: "Aprendizaje y crecimiento", en: "Learning & growth" },
+    INTERNAL_PROCESS: { es: "Operación", en: "Operations" },
+    LEARNING_GROWTH: { es: "Procesos", en: "Processes" },
   };
   return t(locale, map[p].es, map[p].en);
 }
 
-// Orden fijo para que SIEMPRE salga Finanzas → Clientes → Procesos → Aprendizaje
+// Orden fijo
 const P_ORDER: BscPerspective[] = ["FINANCIAL", "CUSTOMER", "INTERNAL_PROCESS", "LEARNING_GROWTH"];
 function pIndex(p: BscPerspective) {
   const i = P_ORDER.indexOf(p);
   return i === -1 ? 999 : i;
+}
+
+function basisShort(locale: string, b: KpiBasis) {
+  // corto y humano (lo dejamos mínimo)
+  if (b === "A") return t(locale, "Acum.", "Cum.");
+  return t(locale, "LTM", "LTM");
 }
 
 export default async function CheckInSummaryPage({
@@ -156,11 +173,9 @@ export default async function CheckInSummaryPage({
         perspective: true,
         unit: true,
         targetValue: true,
-        targetText: true,
         direction: true,
+        basis: true,
       },
-      // ojo: este orderBy puede variar según como Prisma ordene enums;
-      // igual dejamos orden final en JS para asegurar Finanzas → Clientes → Procesos → Aprendizaje
       orderBy: [{ perspective: "asc" }, { nameEs: "asc" }],
     }),
   ]);
@@ -175,23 +190,27 @@ export default async function CheckInSummaryPage({
       </main>
     );
   }
-
+  // Links Pdf y Data Pack
+  const pdfHref = `/${locale}/api/export/summary/pdf?locale=${encodeURIComponent(locale)}&engagementId=${encodeURIComponent(engagementId)}&period=${encodeURIComponent(periodKey)}${activeAccountId ? `&accountId=${encodeURIComponent(activeAccountId)}` : ""}`;
+  
   const kpiIds = kpis.map((k) => k.id);
+  const seriesKeys = buildMonthKeysBack(periodKey, 12);
 
-  const values = kpiIds.length
+  const seriesRows = kpiIds.length
     ? await prisma.kpiValue.findMany({
         where: {
           kpiId: { in: kpiIds },
-          periodKey: { in: [periodKey, prevKey] },
+          periodKey: { in: seriesKeys },
           scopeKey,
         },
-        select: { kpiId: true, periodKey: true, value: true, isGreen: true, note: true },
+        select: { kpiId: true, periodKey: true, value: true },
       })
     : [];
 
-  const valMap = new Map<string, typeof values[number]>();
-  for (const v of values) valMap.set(`${v.kpiId}:${v.periodKey}`, v);
+  const rowByKpiPeriod = new Map<string, typeof seriesRows[number]>();
+  for (const r of seriesRows) rowByKpiPeriod.set(`${r.kpiId}:${r.periodKey}`, r);
 
+  // Snapshots iniciativas + summary guardado
   const [wpCur, wpPrev, wpSummary] = await Promise.all([
     prisma.wizardProgress.findUnique({
       where: { engagementId_stepKey: { engagementId, stepKey: initiativeStepKey(periodKey, scopeKey) } },
@@ -211,7 +230,9 @@ export default async function CheckInSummaryPage({
   const prevInit = safeJsonParse<InitiativeSnapshot>(wpPrev?.notes, { items: [] });
   const prevById = new Map(prevInit.items.map((x) => [x.initiativeId, x]));
 
-  const initIds = Array.from(new Set([...curInit.items.map((x) => x.initiativeId), ...prevInit.items.map((x) => x.initiativeId)]));
+  const initIds = Array.from(
+    new Set([...curInit.items.map((x) => x.initiativeId), ...prevInit.items.map((x) => x.initiativeId)]),
+  );
   const initTitles = initIds.length
     ? await prisma.initiative.findMany({
         where: { id: { in: initIds } },
@@ -230,26 +251,6 @@ export default async function CheckInSummaryPage({
       return { ...x, deltaPct: dp, statusChanged, blockersNow, notesNow };
     })
     .filter((x) => x.deltaPct != null || x.statusChanged || x.blockersNow !== "" || x.notesNow !== "");
-
-  // KPI diffs (ordenados por perspectiva fija)
-  const kpiDiffs = kpis
-    .map((k) => {
-      const cur = valMap.get(`${k.id}:${periodKey}`);
-      const prev = valMap.get(`${k.id}:${prevKey}`);
-      const curNum = toNum(cur?.value?.toString());
-      const prevNum = toNum(prev?.value?.toString());
-      const delta = curNum != null && prevNum != null ? curNum - prevNum : null;
-      return { kpi: k, cur, prev, delta };
-    })
-    .filter((x) => x.cur || x.prev)
-    .sort((a, b) => {
-      const pa = pIndex(a.kpi.perspective);
-      const pb = pIndex(b.kpi.perspective);
-      if (pa !== pb) return pa - pb;
-      const na = (a.kpi.nameEs ?? "").toString();
-      const nb = (b.kpi.nameEs ?? "").toString();
-      return na.localeCompare(nb, "es");
-    });
 
   const summarySaved = safeJsonParse<{ highlights?: string; nextActions?: string }>(wpSummary?.notes, {});
   const highlightsDefault = summarySaved.highlights ?? "";
@@ -299,6 +300,51 @@ export default async function CheckInSummaryPage({
 
   const dataPackHref = `/${locale}/wizard/${engagementId}/check-in/data-pack?${baseQs}`;
 
+  // Tabla: KPIs compactos (Plan vs Real)
+  const kpiRows = [...kpis]
+    .sort((a, b) => {
+      const pa = pIndex(a.perspective);
+      const pb = pIndex(b.perspective);
+      if (pa !== pb) return pa - pb;
+      const na = (a.nameEs ?? "").toString();
+      const nb = (b.nameEs ?? "").toString();
+      return na.localeCompare(nb, "es");
+    })
+    .map((k) => {
+      const prevRow = rowByKpiPeriod.get(`${k.id}:${prevKey}`);
+      const curRow = rowByKpiPeriod.get(`${k.id}:${periodKey}`);
+
+      const prevNum = prevRow?.value != null ? toNum(prevRow.value.toString()) : null;
+      const curNum = curRow?.value != null ? toNum(curRow.value.toString()) : null;
+
+      const targetNumRaw = k.targetValue == null ? null : Number(String(k.targetValue));
+      const targetNum = Number.isFinite(targetNumRaw) ? targetNumRaw : null;
+
+      const series = seriesKeys.map((pk) => {
+        const r = rowByKpiPeriod.get(`${k.id}:${pk}`);
+        const v = r?.value != null ? toNum(r.value.toString()) : null;
+        return { periodKey: pk, value: v };
+      });
+
+      const evaluatedNow = computeEvaluatedValue(k.basis, series, periodKey);
+
+       // Δ = Evaluado - Meta
+      const delta = evaluatedNow != null && targetNum != null ? evaluatedNow - targetNum : null;
+
+      // OK/Atención se decide por Evaluado vs Meta (como ya lo tienes)
+      const ok = curNum == null ? null : computeIsOk(k.direction, evaluatedNow, targetNum);
+
+      return {
+        k,
+        prevTxt: prevRow?.value != null ? String(prevRow.value) : "—",
+        curTxt: curRow?.value != null ? String(curRow.value) : "—",
+        evaluatedNow,
+        delta,
+        targetNum,
+        ok,
+      };
+    });
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8">
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -307,14 +353,10 @@ export default async function CheckInSummaryPage({
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               {t(locale, "Check-in · Resumen", "Check-in · Summary")}
             </p>
-            <h1 className="mt-1 text-lg font-semibold text-slate-900">
-              {engagement.name || t(locale, "Engagement", "Engagement")}
-            </h1>
+            <h1 className="mt-1 text-lg font-semibold text-slate-900">{engagement.name || t(locale, "Engagement", "Engagement")}</h1>
             <p className="mt-1 text-xs text-slate-600">
               <span className="font-semibold">{periodKey}</span>{" "}
-              <span className="text-slate-500">
-                ({t(locale, "vs", "vs")} {prevKey})
-              </span>
+              <span className="text-slate-500">({t(locale, "vs", "vs")} {prevKey})</span>
               {" · "}
               {t(locale, "Scope:", "Scope:")}{" "}
               <span className="font-semibold">{activeAccountId ? t(locale, "Unidad", "Unit") : "GLOBAL"}</span>
@@ -331,13 +373,14 @@ export default async function CheckInSummaryPage({
             <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
               {t(locale, "Iniciativas", "Initiatives")}
             </Link>
-
             <Link href={dataPackHref} className={btnPrimary()}>
               {t(locale, "Data Pack", "Data Pack")}
             </Link>
-
             <Link href={`/${locale}/wizard/${engagementId}/report?${baseQs}`} className={btnDark()}>
               {t(locale, "Ver informe", "View report")}
+            </Link>
+            <Link href={pdfHref} className={btnSoft()}>
+              {t(locale, "Descargar PDF", "Download PDF")}
             </Link>
           </div>
         </div>
@@ -346,74 +389,75 @@ export default async function CheckInSummaryPage({
           <CheckInNav locale={locale} engagementId={engagementId} />
         </div>
 
-        {/* KPI Diff */}
+        {/* KPIs (resumen tipo Plan vs Real) */}
         <div className="mt-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-900">{t(locale, "KPIs (diff)", "KPIs (diff)")}</h2>
+            <h2 className="text-sm font-semibold text-slate-900">{t(locale, "KPIs (resumen)", "KPIs (summary)")}</h2>
             <Link href={`/${locale}/wizard/${engagementId}/check-in/kpis?${baseQs}`} className={btnPrimary()}>
               {t(locale, "Editar KPIs", "Edit KPIs")}
             </Link>
           </div>
 
-          {kpiDiffs.length === 0 ? (
-            <p className="mt-2 text-xs text-slate-500">
-              {t(locale, "Aún no hay valores KPI en estos períodos.", "No KPI values in these periods yet.")}
-            </p>
+          {kpiRows.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">{t(locale, "Aún no hay KPIs.", "No KPIs yet.")}</p>
           ) : (
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              {kpiDiffs.map((x) => {
-                const prevV = x.prev?.value ? String(x.prev.value) : "—";
-                const curV = x.cur?.value ? String(x.cur.value) : "—";
-                const deltaTxt = x.delta != null ? ` · Δ ${x.delta}` : "";
+            <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="min-w-[980px] w-full">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-[11px] font-semibold text-slate-700">
+                    <th className="px-4 py-3 w-[420px]">{t(locale, "KPI", "KPI")}</th>
+                    <th className="px-4 py-3 w-[90px]">{t(locale, "Prev", "Prev")}</th>
+                    <th className="px-4 py-3 w-[110px]">{t(locale, "Actual (mes)", "Current")}</th>
+                    <th className="px-4 py-3 w-[120px]">{t(locale, "Evaluado", "Evaluated")}</th>
+                    <th className="px-4 py-3 w-[110px]">{t(locale, "Δ vs meta", "Δ vs target")}</th>
+                    <th className="px-4 py-3 w-[110px]">{t(locale, "Meta", "Target")}</th>
+                    <th className="px-4 py-3 w-[120px]">{t(locale, "Estado", "Status")}</th>
+                  </tr>
+                </thead>
 
-                const targetV = x.kpi.targetValue != null ? String(x.kpi.targetValue) : "—";
-                const targetTxt = (x.kpi.targetText ?? "").trim();
-                const unitTxt = (x.kpi.unit ?? "").trim();
+                <tbody className="divide-y divide-slate-100">
+                  {kpiRows.map((r) => {
+                    const statusPill =
+                      r.ok == null
+                        ? pill("bg-slate-100 text-slate-700")
+                        : r.ok
+                          ? pill("bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100")
+                          : pill("bg-amber-50 text-amber-800 ring-1 ring-amber-100");
 
-                return (
-                  <div key={x.kpi.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-semibold text-slate-900">{t(locale, x.kpi.nameEs, x.kpi.nameEn)}</div>
-                        <div className="mt-1 text-[11px] text-slate-600">
-                          {perspectiveLabel(locale, x.kpi.perspective)}
-                          {unitTxt ? ` · ${unitTxt}` : ""}
-                        </div>
-                      </div>
+                    const statusTxt =
+                      r.ok == null ? t(locale, "Sin dato", "No data") : r.ok ? "OK" : t(locale, "Atención", "Attention");
 
-                      <div className="shrink-0 text-right text-[11px]">
-                        {x.cur ? (
-                          x.cur.isGreen ? (
-                            <span className="font-semibold text-emerald-700">{t(locale, "Verde", "Green")}</span>
-                          ) : (
-                            <span className="font-semibold text-rose-700">{t(locale, "Rojo", "Red")}</span>
-                          )
-                        ) : (
-                          <span className="text-slate-500">{t(locale, "Sin dato", "No data")}</span>
-                        )}
-                      </div>
-                    </div>
+                    return (
+                      <tr key={r.k.id} className="align-middle">
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-semibold text-slate-900">{t(locale, r.k.nameEs, r.k.nameEn)}</div>
+                          <div className="mt-1 text-[11px] text-slate-600">
+                            {perspectiveLabel(locale, r.k.perspective)}
+                            {r.k.unit ? ` · ${r.k.unit}` : ""}
+                            {" · "}
+                            {basisShort(locale, r.k.basis)}
+                          </div>
+                        </td>
 
-                    <div className="mt-2 text-[11px] text-slate-700">
-                      <div>
-                        {t(locale, "Prev:", "Prev:")} <span className="font-semibold">{prevV}</span> ·{" "}
-                        {t(locale, "Actual:", "Current:")} <span className="font-semibold">{curV}</span>
-                        {deltaTxt}
-                      </div>
+                        <td className="px-4 py-3 text-sm text-slate-900">{r.prevTxt}</td>
+                        <td className="px-4 py-3 text-sm text-slate-900">{r.curTxt}</td>
 
-                      <div className="mt-1">
-                        {t(locale, "Meta:", "Target:")}{" "}
-                        <span className="font-semibold">{targetV}</span>
-                        {targetTxt ? <span className="text-slate-500">{` · ${targetTxt}`}</span> : null}
-                      </div>
+                        <td className="px-4 py-3 text-sm text-slate-900">
+                          <span className="font-semibold">{r.evaluatedNow != null ? String(r.evaluatedNow) : "—"}</span>
+                        </td>
 
-                      {x.cur?.note ? (
-                        <div className="mt-1 text-slate-500">{`${t(locale, "Nota:", "Note:")} ${x.cur.note}`}</div>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
+                        <td className="px-4 py-3 text-sm text-slate-900">{r.delta != null ? String(r.delta) : "—"}</td>
+
+                        <td className="px-4 py-3 text-sm text-slate-900">{r.targetNum != null ? String(r.targetNum) : "—"}</td>
+
+                        <td className="px-4 py-3">
+                          <span className={statusPill}>{statusTxt}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -463,9 +507,7 @@ export default async function CheckInSummaryPage({
         {/* Executive summary saved */}
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Resumen ejecutivo (guardar)", "Executive summary (save)")}
-            </h2>
+            <h2 className="text-sm font-semibold text-slate-900">{t(locale, "Resumen ejecutivo (guardar)", "Executive summary (save)")}</h2>
 
             <div className="flex flex-wrap items-center gap-2">
               <Link href={`/${locale}/wizard/${engagementId}/check-in/kpis?${baseQs}`} className={btnSoft()}>
