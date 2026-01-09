@@ -191,7 +191,15 @@ export default async function CheckInSummaryPage({
     );
   }
   // Links Pdf y Data Pack
-  const pdfHref = `/${locale}/api/export/summary/pdf?locale=${encodeURIComponent(locale)}&engagementId=${encodeURIComponent(engagementId)}&period=${encodeURIComponent(periodKey)}${activeAccountId ? `&accountId=${encodeURIComponent(activeAccountId)}` : ""}`;
+  const pdfHref =
+  "/api/export/summary/pdf?locale=" +
+  encodeURIComponent(locale) +
+  "&engagementId=" +
+  encodeURIComponent(engagementId) +
+  "&period=" +
+  encodeURIComponent(periodKey) +
+  (activeAccountId ? `&accountId=${encodeURIComponent(activeAccountId)}` : "");
+
   
   const kpiIds = kpis.map((k) => k.id);
   const seriesKeys = buildMonthKeysBack(periodKey, 12);
@@ -379,9 +387,9 @@ export default async function CheckInSummaryPage({
             <Link href={`/${locale}/wizard/${engagementId}/report?${baseQs}`} className={btnDark()}>
               {t(locale, "Ver informe", "View report")}
             </Link>
-            <Link href={pdfHref} className={btnSoft()}>
+            <a href={pdfHref} className={btnSoft()}>
               {t(locale, "Descargar PDF", "Download PDF")}
-            </Link>
+            </a>
           </div>
         </div>
 
