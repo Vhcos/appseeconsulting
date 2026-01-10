@@ -169,6 +169,14 @@ export default async function CheckInPage({
   const initsHref = `/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`;
   const summaryHref = `/${locale}/wizard/${engagementId}/check-in/summary?${baseQs}`;
   const dataPackHref = `/${locale}/wizard/${engagementId}/check-in/data-pack?${baseQs}`;
+  // Informe (web) + PDF
+  const reportHref = `/${locale}/wizard/${engagementId}/report?${baseQs}`;
+
+  // IMPORTANT: API routes NO llevan /{locale}
+  const pdfHref = `/api/export/summary/pdf?locale=${encodeURIComponent(locale)}&engagementId=${encodeURIComponent(
+   engagementId
+  )}&period=${encodeURIComponent(periodKey)}${activeAccountId ? `&accountId=${encodeURIComponent(activeAccountId)}` : ""}`;
+
 
   // CTA “continuar donde quedaste”
   const next =
@@ -191,36 +199,36 @@ export default async function CheckInPage({
               {t(locale, "Check-in", "Check-in")}
             </p>
             <h1 className="mt-1 text-lg font-semibold text-slate-900">
-              {engagement.name || t(locale, "Engagement", "Engagement")}
+              {engagement.name || t(locale, "Compromiso", "Engagement")}
             </h1>
 
             <p className="mt-1 text-xs text-slate-600">
               {t(locale, "Meta:", "Goal:")}{" "}
               <span className="font-semibold">
-                {t(locale, "cerrar el mes en 4 pasos (15–20 min).", "close the month in 4 steps (15–20 min).")}
+                {t(locale, "cerrar el mes en 5 pasos .", "close the month in 5 steps ")}
               </span>
             </p>
 
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
               <div className="font-semibold text-slate-900">{t(locale, "Checklist rápido", "Quick checklist")}</div>
               <ol className="mt-1 list-decimal pl-5 space-y-1">
-                <li>{t(locale, "KPIs: valores + notas (lo mínimo).", "KPIs: values + notes (minimum viable).")}</li>
-                <li>{t(locale, "Iniciativas: progreso + bloqueos + evidencia.", "Initiatives: progress + blockers + evidence.")}</li>
-                <li>{t(locale, "Resumen: 1–2 líneas + riesgos + próximos pasos.", "Summary: 1–2 lines + risks + next steps.")}</li>
-                <li>{t(locale, "Data Pack: salida bonita para Dirección/Operación.", "Data Pack: polished output for Exec/Ops.")}</li>
+                <li>{t(locale, "KPIs: Seguimiento mensual.", "KPIs: values + notes (minimum viable).")}</li>
+                <li>{t(locale, "Iniciativas: Seguimiento + progreso + bloqueos.", "Initiatives: progress + blockers + evidence.")}</li>
+                <li>{t(locale, "Resumen: Avances y control.", "Summary: 1–2 lines + risks + next steps.")}</li>
+                <li>{t(locale, "Data Pack: Informe para Dirección/Operación.", "Data Pack: polished output for Exec/Ops.")}</li>
+                <li>{t(locale, "Reporte Semanal: Por unidad operativa.", "Data Pack: polished output for Exec/Ops.")}</li>
               </ol>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/${locale}/wizard/${engagementId}/dashboard`}
-              className="inline-flex items-center rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-900 ring-1 ring-slate-200 hover:bg-slate-50 transition-all active:scale-[0.98]"
-            >
-              ← {t(locale, "Dashboard", "Dashboard")}
-            </Link>
-          </div>
-        </div>
+         <div className="flex flex-wrap items-center gap-2">
+          <Link
+             href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
+             className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-all active:scale-[0.98]"
+           >
+             {t(locale, "Reporte Semanal", "Report Weekly")}
+          </Link>
+         </div></div>
 
         <div className="mt-4">
           <CheckInNav locale={locale} engagementId={engagementId} />
@@ -370,6 +378,23 @@ export default async function CheckInPage({
               {t(locale, "Abrir →", "Open →")}
             </div>
           </Link>
+<Link
+  href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
+  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
+>
+  <div className="flex items-start justify-between gap-3">
+    <div>
+      <div className="text-sm font-semibold text-slate-900">Reporte semanal</div>
+      <div className="mt-1 text-xs text-slate-600">
+        Reporte semanal por faena. para ser llenado por cada responsable de la unidad Link sin login.
+      </div>
+    </div>
+    <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+      Nuevo
+    </span>
+  </div>
+  <div className="mt-3 text-xs font-medium text-indigo-700">Abrir →</div>
+</Link>
         </div>
       </section>
     </main>

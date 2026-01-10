@@ -8,7 +8,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-
 enum Role {
   OWNER
   ADMIN
@@ -107,8 +106,214 @@ enum SwotRiskTag {
 }
 
 enum KpiBasis {
-  A  // YTD-AVG (Year to Date Average)
-  L  // LTM/TTM (Last Twelve Months / Trailing Twelve Months)
+  A // YTD-AVG (Year to Date Average)
+  L // LTM/TTM (Last Twelve Months / Trailing Twelve Months)
+}
+
+// ================================
+// Weekly Faena Reports (NEW)
+// ================================
+
+enum FaenaTurn {
+  DAY
+  NIGHT
+  MIXED
+  NA
+}
+
+enum WeeklyReportStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum WeeklySemaforo {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum DesvioCause {
+  WEATHER
+  CLIENT_RESTRICTION
+  EQUIPMENT
+  INPUTS
+  HSEC
+  COORDINATION
+  OTHER
+}
+
+enum DetentionCause {
+  EQUIPMENT
+  INPUTS
+  CLIENT
+  SAFETY
+  WEATHER
+  OTHER
+}
+
+enum ReportClienteEstado {
+  ON_TIME
+  LATE
+  NOT_APPLICABLE
+}
+
+enum ReportClienteAtrasoCausa {
+  MISSING_DATA
+  INTERNAL_APPROVAL
+  CLIENT
+  SYSTEM_TECH
+  OTHER
+}
+
+enum DataPackEstado {
+  UP_TO_DATE
+  LATE
+  NOT_APPLICABLE
+}
+
+enum AccionCorrectivaEstado {
+  YES
+  NO
+  NA
+}
+
+enum ApoyoTipo {
+  PURCHASING
+  MAINTENANCE
+  HSEC
+  DATA_TECH
+  COMMERCIAL_CLIENT
+  OTHER
+}
+
+model Faena {
+  id           String @id @default(cuid())
+  engagementId String
+
+  name       String
+  code       String?
+  adminEmail String?
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  engagement    Engagement               @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  weeklyReports WeeklyFaenaReport[]
+  weeklyTokens  WeeklyFaenaReportToken[]
+
+  @@index([engagementId])
+}
+
+model WeeklyFaenaReportToken {
+  id           String @id @default(cuid())
+  token        String @unique
+  engagementId String
+  faenaId      String
+
+  weekStart DateTime
+  weekEnd   DateTime
+
+  expiresAt    DateTime
+  usedAt       DateTime?
+  lastOpenedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  faena      Faena      @relation(fields: [faenaId], references: [id], onDelete: Cascade)
+
+  report WeeklyFaenaReport? @relation("WeeklyFaenaTokenReport")
+
+  @@index([engagementId])
+  @@index([faenaId])
+  @@index([expiresAt])
+}
+
+model WeeklyFaenaReport {
+  id           String @id @default(cuid())
+  engagementId String
+  faenaId      String
+
+  weekStart DateTime
+  weekEnd   DateTime
+  weekKey   String
+
+  status WeeklyReportStatus @default(DRAFT)
+
+  adminName  String?
+  adminEmail String?
+
+  dotacionPromedio Int?
+  turn             FaenaTurn?
+
+  // A) Plan vs Real
+  m2Planificados    Decimal?
+  m2Ejecutados      Decimal?
+  causasDesvio      DesvioCause[]
+  causasDesvioOther String?
+
+  // B) Disponibilidad
+  turnosPlanificados      Int?
+  turnosEntregados        Int?
+  detencionesHubo         Boolean?
+  detencionesEventos      Int?
+  detencionesHoras        Decimal?
+  detencionCausaPrincipal DetentionCause?
+
+  // C) Calidad
+  sinRetrabajos              Boolean?
+  sinNoConformidades         Boolean?
+  retrabajosN                Int?
+  noConformidadesN           Int?
+  accionCorrectivaRegistrada AccionCorrectivaEstado?
+
+  // D) Seguridad (inputs)
+  horasHombre          Decimal?
+  incidentesCasi       Int?
+  lesionesRegistrables Int?
+  accionesHsecCerradas Int?
+  sinEventosHsec       Boolean?
+  referenciaEventoHsec String?
+
+  // E) Reportabilidad / Data Pack
+  reporteClienteEstado      ReportClienteEstado?
+  reporteClienteAtrasoCausa ReportClienteAtrasoCausa?
+  dataPackMesEstado         DataPackEstado?
+
+  // F) Carpeta auditable (checklist)
+  contratoAnexosOk      Boolean?
+  planCierreOk          Boolean?
+  evidenciasOk          Boolean?
+  reportesArchivadosOk  Boolean?
+  bitacoraDetencionesOk Boolean?
+  registroCalidadOk     Boolean?
+
+  // G) Semáforo / Escalamiento
+  semaforo        WeeklySemaforo
+  requiereApoyo   Boolean?
+  tiposApoyo      ApoyoTipo[]
+  tiposApoyoOther String?
+
+  // Comentario final
+  comentario String?
+
+  submittedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tokenId String?                 @unique
+  token   WeeklyFaenaReportToken? @relation("WeeklyFaenaTokenReport", fields: [tokenId], references: [id], onDelete: SetNull)
+
+  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  faena      Faena      @relation(fields: [faenaId], references: [id], onDelete: Cascade)
+
+  @@unique([faenaId, weekKey])
+  @@index([engagementId])
+  @@index([faenaId])
+  @@index([weekStart])
+  @@index([semaforo])
 }
 
 model User {
@@ -238,7 +443,10 @@ model Engagement {
   notifications  NotificationEvent[]
   activationKeys ActivationKey[]
 
-  wizardProgress WizardProgress[]
+  wizardProgress          WizardProgress[]
+  faenas                  Faena[]
+  weeklyFaenaReportTokens WeeklyFaenaReportToken[]
+  weeklyFaenaReports      WeeklyFaenaReport[]
 
   @@index([orgId])
   @@index([companyId])
@@ -403,7 +611,7 @@ model Kpi {
   perspective BscPerspective
   frequency   KpiFrequency
   direction   KpiDirection
-  basis KpiBasis @default(A)
+  basis       KpiBasis       @default(A)
   dataSource  KpiDataSource  @default(MANUAL)
 
   unit    String?
@@ -425,8 +633,6 @@ model Kpi {
   values      KpiValue[]
   initiatives Initiative[] @relation("KpiInitiatives")
 
-  
-
   @@index([engagementId])
   @@index([canonicalId])
 }
@@ -446,7 +652,7 @@ model KpiValue {
 
   value   Decimal?
   note    String?
-  isGreen Boolean @default(false)
+  isGreen Boolean  @default(false)
 
   createdByUserId String?
   createdAt       DateTime @default(now())
@@ -801,6 +1007,7 @@ model DataRoomItem {
   @@index([engagementId])
   @@index([area])
 }
+
 
 model DataRoomFile {
   id           String  @id @default(cuid())

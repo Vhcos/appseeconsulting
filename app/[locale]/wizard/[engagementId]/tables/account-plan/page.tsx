@@ -84,16 +84,18 @@ export default async function AccountPlanPage({
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            {t(locale, "Account plan (unidades)", "Account plan (units)")}
+            {t(locale, "Estructura por unidad operativa", "Structure by operational unit")}
           </p>
+
           <h1 className="mt-1 text-xl font-semibold text-slate-900">
-            {t(locale, "Account Plan", "Account Plan")}
+            {t(locale, "Unidades operativas", "Operational units")}
           </h1>
+
           <p className="mt-1 max-w-3xl text-sm text-slate-600">
             {t(
               locale,
-              "Una fila = una unidad (faena/obra/cliente). Esto después se usa para asignar iniciativas, roadmap, unit economics y KPI por unidad.",
-              "One row = one unit (site/project/client). Later you can scope initiatives, roadmap, unit economics and KPI per unit.",
+              "Crea tus unidades operativas (por ejemplo: faena, obra, sucursal, contrato o cliente). Luego podrás asignar iniciativas, roadmap, unit economics y KPIs por unidad.",
+              "Create your operational units (for example: site, project, branch, contract, or client). Later you can scope initiatives, roadmap, unit economics, and KPIs per unit.",
             )}
           </p>
         </div>
@@ -110,10 +112,10 @@ export default async function AccountPlanPage({
 
       {activeAccountId && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
-          {t(locale, "Unidad activa:", "Active unit:")}{" "}
+          {t(locale, "Unidad operativa activa:", "Active operational unit:")}{" "}
           <span className="font-semibold">{activeAccountId}</span>
           <span className="ml-2 text-slate-500">
-            ({t(locale, "solo referencia por querystring", "just querystring reference")})
+            ({t(locale, "solo referencia por parámetro en la URL", "just a URL parameter reference")})
           </span>
         </div>
       )}
@@ -122,13 +124,13 @@ export default async function AccountPlanPage({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">
-              {t(locale, "Nueva fila", "New row")}
+              {t(locale, "Nueva unidad operativa", "New operational unit")}
             </h2>
             <p className="mt-1 text-xs text-slate-600">
               {t(
                 locale,
-                "Crea una unidad. Puedes partir con 1 y después agregar.",
-                "Create a unit. Start with 1 and add more later.",
+                "Parte con 1 unidad y agrega más cuando lo necesites.",
+                "Start with one unit and add more later.",
               )}
             </p>
           </div>
@@ -138,23 +140,27 @@ export default async function AccountPlanPage({
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-900">
-                {t(locale, "Cuenta / Unidad", "Account / Unit")}
+                {t(locale, "Unidad operativa", "Operational unit")}
               </label>
               <input
                 name="account"
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                placeholder={t(locale, "Ej: Los Bronces", "e.g., Los Bronces")}
+                placeholder={t(
+                  locale,
+                  "Ej: Faena Los Bronces / Obra San Gregorio / Sucursal Temuco / Contrato X",
+                  "e.g., Los Bronces site / San Gregorio project / Temuco branch / Contract X",
+                )}
               />
             </div>
 
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-900">
-                {t(locale, "Meta 12 meses", "12-month goal")}
+                {t(locale, "Meta a 12 meses", "12-month goal")}
               </label>
               <input
                 name="goal12m"
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                placeholder={t(locale, "Ej: Renovar + expandir contrato", "e.g., Renew + expand contract")}
+                placeholder={t(locale, "Ej: Renovar y expandir contrato", "e.g., Renew and expand contract")}
               />
             </div>
           </div>
@@ -168,7 +174,7 @@ export default async function AccountPlanPage({
                 name="decisionMakers"
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
-                placeholder={t(locale, "- Gerente Operaciones\n- Jefe Mantención", "- Operations Manager\n- Maintenance Lead")}
+                placeholder={t(locale, "- Gerente de Operaciones\n- Jefe de Mantención", "- Operations Manager\n- Maintenance Lead")}
               />
             </div>
 
@@ -180,6 +186,7 @@ export default async function AccountPlanPage({
                 name="competitors"
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "Ej: Empresa A, Empresa B", "e.g., Company A, Company B")}
               />
             </div>
           </div>
@@ -193,6 +200,7 @@ export default async function AccountPlanPage({
                 name="mainPain"
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "¿Qué duele hoy y por qué importa?", "What hurts today and why does it matter?")}
               />
             </div>
 
@@ -204,6 +212,7 @@ export default async function AccountPlanPage({
                 name="valueProp"
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "¿Qué ofreces distinto y medible?", "What do you offer that is different and measurable?")}
               />
             </div>
           </div>
@@ -217,6 +226,7 @@ export default async function AccountPlanPage({
                 name="agenda8w"
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "Hitos concretos para las próximas 8 semanas", "Concrete milestones for the next 8 weeks")}
               />
             </div>
 
@@ -228,6 +238,7 @@ export default async function AccountPlanPage({
                 name="nextStep"
                 rows={3}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                placeholder={t(locale, "Acción inmediata (dueño, fecha, output)", "Immediate action (owner, date, output)")}
               />
             </div>
           </div>
@@ -250,11 +261,11 @@ export default async function AccountPlanPage({
               type="submit"
               className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
             >
-              {t(locale, "Guardar fila", "Save row")}
+              {t(locale, "Guardar unidad", "Save unit")}
             </button>
 
             <span className="ml-auto text-[11px] text-slate-500">
-              {t(locale, "Filas:", "Rows:")} {rows.length}
+              {t(locale, "Unidades:", "Units:")} {rows.length}
             </span>
           </div>
         </form>
@@ -266,14 +277,14 @@ export default async function AccountPlanPage({
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200">
                 {[
-                  t(locale, "Cuenta", "Account"),
-                  t(locale, "Meta 12m", "12m goal"),
+                  t(locale, "Unidad operativa", "Operational unit"),
+                  t(locale, "Meta 12 meses", "12-month goal"),
                   t(locale, "Decisores", "Decision makers"),
                   t(locale, "Competidores", "Competitors"),
                   t(locale, "Dolor", "Pain"),
-                  t(locale, "Valor", "Value prop"),
-                  t(locale, "Agenda 8w", "Agenda 8w"),
-                  t(locale, "Próximo", "Next"),
+                  t(locale, "Valor", "Value proposition"),
+                  t(locale, "Agenda 8 semanas", "8-week agenda"),
+                  t(locale, "Próximo paso", "Next step"),
                   t(locale, "Estado", "Status"),
                   t(locale, "Acción", "Action"),
                 ].map((h) => (
@@ -290,14 +301,14 @@ export default async function AccountPlanPage({
             <tbody>
               {rows.map((r, idx) => (
                 <tr key={r.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                  <td className="min-w-[160px] px-3 py-2 align-top text-[11px] text-slate-900">{r.account ?? ""}</td>
-                  <td className="min-w-[160px] px-3 py-2 align-top text-[11px] text-slate-700">{r.goal12m ?? ""}</td>
+                  <td className="min-w-[220px] px-3 py-2 align-top text-[11px] text-slate-900">{r.account ?? ""}</td>
+                  <td className="min-w-[180px] px-3 py-2 align-top text-[11px] text-slate-700">{r.goal12m ?? ""}</td>
                   <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.decisionMakers ?? ""}</td>
                   <td className="min-w-[150px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.competitors ?? ""}</td>
                   <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.mainPain ?? ""}</td>
                   <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.valueProp ?? ""}</td>
-                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.agenda8w ?? ""}</td>
-                  <td className="min-w-[170px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.nextStep ?? ""}</td>
+                  <td className="min-w-[190px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.agenda8w ?? ""}</td>
+                  <td className="min-w-[190px] px-3 py-2 align-top text-[11px] text-slate-700 whitespace-pre-line">{r.nextStep ?? ""}</td>
                   <td className="min-w-[120px] px-3 py-2 align-top text-[11px] text-slate-700">{r.status ?? ""}</td>
                   <td className="px-3 py-2 align-top text-[11px]">
                     <form action={deleteRow.bind(null, r.id, engagementId, locale)}>
@@ -315,7 +326,7 @@ export default async function AccountPlanPage({
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={10} className="px-4 py-6 text-sm text-slate-500">
-                    {t(locale, "Aún no hay filas. Crea la primera unidad.", "No rows yet. Create the first unit.")}
+                    {t(locale, "Aún no hay unidades. Crea la primera.", "No units yet. Create the first one.")}
                   </td>
                 </tr>
               )}

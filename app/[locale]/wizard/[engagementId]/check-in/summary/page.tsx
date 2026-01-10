@@ -372,21 +372,13 @@ export default async function CheckInSummaryPage({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={`/${locale}/wizard/${engagementId}/check-in?${baseQs}`} className={btnSoft()}>
-              ← {t(locale, "Inicio", "Home")}
+            <Link
+              href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
+              className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-all active:scale-[0.98]"
+            >
+              {t(locale, "Reporte Semanal", "Report Weekly")}
             </Link>
-            <Link href={`/${locale}/wizard/${engagementId}/check-in/kpis?${baseQs}`} className={btnSoft()}>
-              {t(locale, "KPIs", "KPIs")}
-            </Link>
-            <Link href={`/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`} className={btnSoft()}>
-              {t(locale, "Iniciativas", "Initiatives")}
-            </Link>
-            <Link href={dataPackHref} className={btnPrimary()}>
-              {t(locale, "Data Pack", "Data Pack")}
-            </Link>
-            <Link href={`/${locale}/wizard/${engagementId}/report?${baseQs}`} className={btnDark()}>
-              {t(locale, "Ver informe", "View report")}
-            </Link>
+  
             <a href={pdfHref} className={btnSoft()}>
               {t(locale, "Descargar PDF", "Download PDF")}
             </a>
