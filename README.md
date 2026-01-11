@@ -532,3 +532,180 @@ Validación rápida:
   - KPIs → Initiatives → Summary
   - Summary exportable a PDF vía `/api/export/summary/pdf`
 - Scope por unidad soportado vía `accountId`.
+1) README — 12. Informe semanal faena (lo realizado)
+Objetivo
+
+Implementar el Reporte Semanal de Faena (vista web + PDF) con:
+
+Datos consistentes entre formulario → detalle web → PDF.
+
+PDF “humano”: en español, sin códigos internos tipo UP_TO_DATE, CLIENT_RESTRICTION, etc.
+
+Evitar errores típicos: rutas 404, archivos mal creados, campos no capturados, estilos ilegibles.
+
+Rutas finales (importante)
+PDF (reporte semanal)
+
+Endpoint estable:
+/api/export/weekly-report/pdf?locale=es&engagementId=...&reportId=...
+
+locale se ignora (PDF fijo en español).
+
+Requiere engagementId y reportId.
+
+PDF (summary mensual)
+
+Endpoint existente y funcional:
+/api/export/summary/pdf?locale=es&engagementId=...&period=YYYY-MM
+
+Decisión: mantener el summary por su utilidad (mensual/estratégico) y el weekly-report por su rol operativo/semanal. No se pisan: son productos distintos.
+
+Problemas que ocurrieron y cómo se corrigieron
+A) Error de build por “cat > …” dentro del archivo
+
+Síntoma
+
+Build error: “Parsing ecmascript source code failed”
+
+La primera línea del archivo decía cat > app/.../route.ts <<'EOF'
+
+Causa
+
+Se pegó el comando de terminal dentro del .ts.
+
+Fix
+
+El archivo debe contener solo TypeScript.
+
+Los comandos cat > ... <<'EOF' se ejecutan en terminal, nunca dentro del código.
+
+B) 404 en la ruta del weekly PDF
+
+Síntoma
+
+http://localhost:3000/es/api/export/weekly-report/pdf?... devolvía 404
+
+Causa
+
+Confusión entre rutas con locale en App Router.
+
+Para API routes en app/api/..., el locale no aplica (a menos que tú lo metas a propósito en la ruta).
+
+Fix
+
+Confirmar ruta real: /api/export/weekly-report/pdf (sin /es).
+
+C) “Espacio gigante” / cajas desproporcionadas en PDF
+
+Síntoma
+
+La sección “Estado” quedaba enorme y empujaba el layout.
+
+Causa típica
+
+Algún contenedor con altura implícita o margen/padding excesivo.
+
+Ajustes de flex/spacing en React-PDF.
+
+Fix
+
+Se normalizó layout (band compacto, cards bien distribuidas).
+
+Se ajustó el estilo para que el band sea contenido, no “expansivo”.
+
+D) PDF mezclando español + códigos en inglés
+
+Síntoma
+
+Se veían valores como UP_TO_DATE, ON_TIME, CLIENT_RESTRICTION, etc.
+
+Listas tipo "WEATHER,CLIENT_RESTRICTION,INPUTS" salían como string crudo.
+
+Causa
+
+mapCodeToEs() traducía un string completo, pero no separaba listas.
+
+Faltaban mappings (UP_TO_DATE, WEATHER, INPUTS, etc.).
+
+Fix
+
+Se creó una función de “normalización de listas”:
+
+Si viene array → map item por item.
+
+Si viene string con comas → split → map item por item → join “ · ”.
+
+Se completó el diccionario de traducción.
+
+Resultado:
+
+UP_TO_DATE → A tiempo
+
+WEATHER,CLIENT_RESTRICTION,INPUTS → Clima · Restricción del cliente · Insumos
+
+E) “Responsable” y Email aparecían en el formulario pero no en el PDF
+
+Síntoma
+
+Formulario (token) mostraba “Administrador responsable” + email.
+
+PDF y/o detalle web no lo reflejaban.
+
+Causa
+
+Campos guardados con nombres distintos según capas:
+
+En el formulario: adminName/administradorResponsable (ejemplo)
+
+En el reporte: submittedByName, submittedByEmail, u otra key
+
+O estaban anidados en un JSON (data/payload/answers)
+
+Fix
+
+Se aplicó una estrategia “sin inventar” pero robusta:
+
+pickDeep() busca el dato en:
+
+raíz del reporte
+
+y contenedores típicos: data, payload, raw, answers, form, meta
+
+Se definieron aliases explícitos para nombre/email.
+
+Se agregó “Responsable” al bloque Estado del PDF.
+
+Mejoras visuales finales (para humanos, no para máquinas)
+
+PDF fijo en español.
+
+Bordes más notorios:
+
+borderWidth: 2
+
+color más contrastado (#CBD5E1)
+
+Layout legible:
+
+cards 48% (2 columnas)
+
+label/value con widths (55/45) para evitar choques
+
+Normalización de strings con comillas (ej: "200" → 200).
+
+Checklist de “no volver a fallar”
+
+Nunca pegar comandos de terminal dentro de .ts.
+
+Rutas API: /api/... (sin /{locale}), salvo que exista ruta explícita con locale.
+
+Nunca imprimir enums/códigos: todo debe pasar por mapMaybeList()/mapeos.
+
+Campos de formulario: definir una fuente de verdad y/o un alias map documentado.
+
+Estado actual
+
+✅ Reporte semanal (web) OK
+✅ PDF semanal OK (español + valores humanizados + bordes visibles)
+✅ Responsable + email capturados y mostrados
+✅ Espacios/maquetación estabilizados
