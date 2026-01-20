@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import CreateLinkCard from "./CreateLinkCard";
+import { createWeeklyFaenaLink } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -75,6 +76,10 @@ function semaforoBadge(semaforo: string) {
   return `${base} border-slate-200 bg-slate-50 text-slate-700`;
 }
 
+type CreateLinkState =
+  | { ok: false; error?: string; link?: never }
+  | { ok: true; link: string; error?: never };
+
 export default async function FaenaSemanalPage({ params }: { params: ParamsPromise }) {
   const { locale, engagementId } = await params;
 
@@ -99,6 +104,28 @@ export default async function FaenaSemanalPage({ params }: { params: ParamsPromi
     include: { faena: true },
     orderBy: [{ weekStart: "desc" }, { createdAt: "desc" }],
   });
+
+  // Server Action (vía form) para evitar "Invalid Server Actions request" en Turbopack
+  async function createLinkAction(prev: CreateLinkState, formData: FormData): Promise<CreateLinkState> {
+    "use server";
+
+    const faenaId = String(formData.get("faenaId") ?? "").trim();
+    const weekStart = String(formData.get("weekStart") ?? "").trim();
+
+    if (!faenaId) return { ok: false, error: "Falta unidad operativa." };
+    if (!weekStart) return { ok: false, error: "Falta semana (lunes)." };
+
+    const resp = await createWeeklyFaenaLink({
+      locale,
+      engagementId,
+      faenaId,
+      weekStart,
+      expiresInDays: 14,
+    });
+
+    if (!resp.ok) return { ok: false, error: resp.error || "No se pudo crear el link." };
+    return { ok: true, link: resp.link };
+  }
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-6">
@@ -131,7 +158,12 @@ export default async function FaenaSemanalPage({ params }: { params: ParamsPromi
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <CreateLinkCard locale={locale} engagementId={engagementId} faenas={faenas} />
+        <CreateLinkCard
+          locale={locale}
+          engagementId={engagementId}
+          faenas={faenas}
+          createLinkAction={createLinkAction}
+        />
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">

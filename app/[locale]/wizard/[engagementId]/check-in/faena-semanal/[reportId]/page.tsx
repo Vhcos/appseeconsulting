@@ -230,20 +230,27 @@ export default async function ReportDetail({ params }: { params: ParamsPromise }
         </div>
 
         <div className="flex items-center gap-2">
-          <Link
-            href={pdfHref}
-            className="inline-flex items-center rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"
-          >
-            {t(locale, "Descargar PDF", "Download PDF")}
-          </Link>
+  <Link
+    href={pdfHref}
+    className="inline-flex items-center rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700"
+  >
+    {t(locale, "Descargar PDF", "Download PDF")}
+  </Link>
 
-          <Link
-            href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
-            className="inline-flex items-center rounded-full border-2 border-slate-300 px-3 py-1 text-xs font-bold text-slate-800 hover:bg-slate-50"
-          >
-            {t(locale, "← Volver a listado", "← Back to list")}
-          </Link>
-        </div>
+  <Link
+    href={`/${locale}/wizard/${engagementId}/check-in/data-pack/ops?reportId=${encodeURIComponent(reportId)}`}
+    className="inline-flex items-center rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800"
+  >
+    {t(locale, "Abrir Data Pack Ops", "Open Ops Data Pack")}
+  </Link>
+
+  <Link
+    href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
+    className="inline-flex items-center rounded-full border-2 border-slate-300 px-3 py-1 text-xs font-bold text-slate-800 hover:bg-slate-50"
+  >
+    {t(locale, "← Volver a listado", "← Back to list")}
+  </Link>
+</div>
       </div>
 
       <section className="rounded-2xl border-2 border-slate-300 bg-white p-4 shadow-sm">

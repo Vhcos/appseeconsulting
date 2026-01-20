@@ -64,7 +64,36 @@ export default async function WizardEngagementLayout({
                 </p>
               </div>
             </div>
-
+<Link 
+  href="/ecosistema"
+  className="
+    group relative inline-flex items-center gap-2 px-4 py-2 
+    bg-cyan-950/50 border border-cyan-500/30 text-cyan-400 
+    rounded-lg font-medium text-sm transition-all duration-300
+    hover:bg-cyan-900/80 hover:border-cyan-400 hover:text-cyan-200 hover:shadow-[0_0_15px_rgba(6,182,212,0.3)]
+  "
+>
+  {/* Icono de Red/Nodo (SVG) */}
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width="16" height="16" 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round"
+    className="transition-transform group-hover:scale-110"
+  >
+    <circle cx="18" cy="5" r="3"></circle>
+    <circle cx="6" cy="12" r="3"></circle>
+    <circle cx="18" cy="19" r="3"></circle>
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+  </svg>
+  
+  <span>Ver Ecosistema</span>
+</Link>
             <nav className="flex flex-wrap items-center gap-2 text-xs">
               <Link
                 href={`/${locale}/wizard/${engagementId}/dashboard`}
