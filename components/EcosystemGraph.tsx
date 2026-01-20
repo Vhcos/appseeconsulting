@@ -1,7 +1,6 @@
 "use client";
 
-import * as React from "react";
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { Network } from "vis-network";
 import { DataSet } from "vis-data";
 
@@ -14,12 +13,11 @@ const EcosystemGraph = () => {
 
     // --- PALETA DE COLORES ---
     const C_GG = "#0ea5e9";       // Azul Eléctrico
-    const C_TECH = "#06b6d4";     // Cian
+    const C_TECH = "#06b6d4";     // Cian (Ops/Innovación/HSEQ)
     const C_BIZ = "#94a3b8";      // Gris Azulado
     const C_PEOPLE = "#f97316";   // Naranja
     const C_SUP = "#475569";      // Gris Oscuro
     
-    // Estilo Futuro (Ghost Node)
     const C_FUTURE_BG = "rgba(71, 85, 105, 0.2)"; 
     const C_FUTURE_BORDER = "rgba(71, 85, 105, 0.6)";
 
@@ -52,7 +50,7 @@ const EcosystemGraph = () => {
         shapeProperties: { borderDashes: [5, 5] }
       },
       { 
-        id: 13, // Nuevo nodo KAM
+        id: 13, 
         label: "KAM\n(Proyección 2027-28)", 
         title: "Gestión Cuentas Clave",
         color: { background: C_FUTURE_BG, border: C_FUTURE_BORDER }, 
@@ -63,10 +61,17 @@ const EcosystemGraph = () => {
         shapeProperties: { borderDashes: [5, 5] }
       },
 
-      // --- PRIMERA LÍNEA (Directores) ---
+      // --- PRIMERA LÍNEA (Líderes y Directores) ---
       { 
         id: 2, 
         label: "Dir. OPERACIONES\nAmanda Leyton", 
+        color: C_TECH, 
+        size: 45 
+      },
+      { 
+        id: 14, 
+        label: "LIDER HSEQ\nPaola González", 
+        title: "Seguridad, Calidad y Medio Ambiente",
         color: C_TECH, 
         size: 45 
       },
@@ -78,7 +83,7 @@ const EcosystemGraph = () => {
       },
       { 
         id: 4, 
-        label: "Dir. PEOPLE\nMargarita Méndez", 
+        label: "LIDER PEOPLE\nMargarita Méndez", 
         color: C_PEOPLE, 
         size: 45 
       },
@@ -120,32 +125,39 @@ const EcosystemGraph = () => {
       }
     ]);
 
-    // --- 2. CONEXIONES (ARISTAS CON ID) ---
+    // --- 2. CONEXIONES (ARISTAS) ---
     const edges = new DataSet([
       // Jerarquía Principal
       { id: "e1", from: 10, to: 1, arrows: "to", color: { color: "#555" } }, // Directorio -> GG
       
-      // Conexiones Futuras (Línea punteada larga)
+      // Conexiones Futuras
       { id: "e2", from: 11, to: 1, arrows: "to", dashes: [10, 10], color: { color: "#444" } }, // Nuevos Mercados -> GG
-      { id: "e3", from: 13, to: 6, arrows: "to", dashes: [10, 10], color: { color: "#444" } }, // KAM -> Comercial (Nuevo)
+      { id: "e3", from: 13, to: 6, arrows: "to", dashes: [10, 10], color: { color: "#444" } }, // KAM -> Comercial
 
-      // GG -> Directores
-      { id: "e4", from: 1, to: 2, width: 2, color: { color: "#aaa" } }, 
-      { id: "e5", from: 1, to: 3, width: 2, color: { color: "#aaa" } }, 
-      { id: "e6", from: 1, to: 4, width: 2, color: { color: "#aaa" } }, 
-      { id: "e7", from: 1, to: 5, width: 2, color: { color: "#aaa" } }, 
-      { id: "e8", from: 1, to: 6, width: 2, color: { color: "#aaa" } }, 
+      // GG -> Líderes (Jerarquía sólida)
+      { id: "e4", from: 1, to: 2, width: 2, color: { color: "#aaa" } }, // A Ops
+      { id: "e16", from: 1, to: 14, width: 2, color: { color: "#aaa" } }, // A HSEQ
+      { id: "e5", from: 1, to: 3, width: 2, color: { color: "#aaa" } }, // A Finanzas
+      { id: "e6", from: 1, to: 4, width: 2, color: { color: "#aaa" } }, // A People
+      { id: "e7", from: 1, to: 5, width: 2, color: { color: "#aaa" } }, // A Innovación
+      { id: "e8", from: 1, to: 6, width: 2, color: { color: "#aaa" } }, // A Comercial
 
       // Jerarquía Secundaria
-      { id: "e9", from: 2, to: 7, width: 1, length: 180, color: { color: "#06b6d4" } }, // Ops -> Ops Norte
-      { id: "e10", from: 5, to: 8, width: 1, length: 180, color: { color: "#06b6d4" } }, // Inn -> Sub I&T
+      { id: "e9", from: 2, to: 7, width: 1, length: 180, color: { color: "#06b6d4" } }, 
+      { id: "e10", from: 5, to: 8, width: 1, length: 180, color: { color: "#06b6d4" } }, 
 
-      // Colaboración (Ecosistema)
+      // Colaboración (Ecosistema - Líneas Punteadas)
       { id: "e11", from: 2, to: 5, dashes: true, color: { color: "#06b6d4" }, title: "Validación en Terreno" },
       { id: "e12", from: 2, to: 3, dashes: true, color: { color: "#94a3b8" }, title: "Estados de Pago" },
       { id: "e13", from: 6, to: 5, dashes: true, color: { color: "#06b6d4" }, title: "Oferta de Valor" },
       { id: "e14", from: 4, to: 2, dashes: true, color: { color: "#f97316" }, width: 1 },
-      { id: "e15", from: 4, to: 6, dashes: true, color: { color: "#f97316" }, width: 1 }
+      { id: "e15", from: 4, to: 6, dashes: true, color: { color: "#f97316" }, width: 1 },
+
+      // --- NUEVAS CONEXIONES HSEQ ---
+      // HSEQ conecta con Operaciones (Control de Riesgos)
+      { id: "e17", from: 14, to: 2, dashes: true, color: { color: "#06b6d4" }, title: "Control Operacional" },
+      // HSEQ conecta con People (Cultura de Seguridad)
+      { id: "e18", from: 14, to: 4, dashes: true, color: { color: "#f97316" }, title: "Cultura y Capacitación" }
     ]);
 
     const data = { nodes, edges };
