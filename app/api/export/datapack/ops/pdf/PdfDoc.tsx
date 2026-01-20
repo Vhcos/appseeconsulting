@@ -1,25 +1,46 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 
-function t(locale: string, es: string, en: string) {
+export type OpsPdfInput = {
+  locale: "es" | "en";
+
+  // Encabezado (líneas ya armadas)
+  clientFaenaLine: string;
+  periodLine: string;
+  zoneLine: string;
+  counterpartLine: string;
+  ownerLine: string;
+
+  // Datos desde WeeklyFaenaReport (sin inventar)
+  m2Plan?: any;
+  m2Real?: any;
+  causasDesvio?: any;
+
+  detencionesHoras?: any;
+  detencionCausa?: any;
+
+  incidentesCasi?: any;
+  lesionesRegistrables?: any;
+  referenciaEventoHsec?: any;
+
+  // Punto 4 (editorial)
+  ajustePropuesto?: string;
+  porQue?: string;
+  queNecesitoDelMandante?: string;
+};
+
+function t(locale: "es" | "en", es: string, en: string) {
   return locale === "en" ? en : es;
 }
 
 function fmtNum(v: any, digits = 0): string {
   if (v === null || v === undefined || v === "") return "—";
-  const n = typeof v === "number" ? v : Number(v);
+  const n = typeof v === "number" ? v : Number(String(v).replace(",", "."));
   if (!Number.isFinite(n)) return String(v);
   return n.toLocaleString("es-CL", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 }
 
-function fmtPct(v: any, digits = 0): string {
-  if (v === null || v === undefined || v === "") return "—";
-  const n = typeof v === "number" ? v : Number(v);
-  if (!Number.isFinite(n)) return String(v);
-  return `${n.toFixed(digits)}%`;
-}
-
-function mapCode(locale: string, raw: any) {
+function mapCode(locale: "es" | "en", raw: any) {
   if (raw === null || raw === undefined || raw === "") return "—";
   const s = String(raw).trim();
   if (!s) return "—";
@@ -33,71 +54,73 @@ function mapCode(locale: string, raw: any) {
     HSEC: { es: "HSEC", en: "HSEC" },
     COORDINATION: { es: "Coordinación", en: "Coordination" },
     OTHER: { es: "Otro", en: "Other" },
+
+    CLIENT: { es: "Mandante", en: "Client" },
+    SAFETY: { es: "Seguridad", en: "Safety" },
   };
 
   return dict[u] ? t(locale, dict[u].es, dict[u].en) : s;
 }
 
-function mapList(locale: string, v: any): string {
+function mapList(locale: "es" | "en", v: any): string {
   if (!v) return "—";
   if (Array.isArray(v)) {
     const parts = v.map((x) => mapCode(locale, x)).filter(Boolean);
     return parts.length ? parts.join(" + ") : "—";
   }
-  if (typeof v === "string" && v.includes(",")) {
-    const parts = v
+  // si viene "A,B,C"
+  const s = String(v).trim();
+  if (!s) return "—";
+  if (s.includes(",")) {
+    return s
       .split(",")
-      .map((x) => x.trim())
+      .map((x) => mapCode(locale, x.trim()))
       .filter(Boolean)
-      .map((x) => mapCode(locale, x));
-    return parts.length ? parts.join(" + ") : "—";
+      .join(" + ");
   }
-  return mapCode(locale, v);
+  return mapCode(locale, s);
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 36, fontSize: 11, fontFamily: "Times-Roman" },
-  title: { fontSize: 22, fontFamily: "Times-Bold", marginBottom: 12 },
-  meta: { marginBottom: 2 },
-  h: { fontSize: 16, fontFamily: "Times-Bold", marginTop: 18, marginBottom: 10 },
-  table: { display: "flex", width: "100%", marginTop: 6 },
-  tr: { flexDirection: "row", paddingVertical: 6 },
-  th: { fontFamily: "Times-Bold" },
-  c1: { width: "38%" },
-  c2: { width: "12%", textAlign: "right" },
-  c3: { width: "12%", textAlign: "right" },
-  c4: { width: "12%", textAlign: "right" },
-  c5: { width: "26%", paddingLeft: 10 },
-  bullet: { marginLeft: 14, marginBottom: 3 },
-  bold: { fontFamily: "Times-Bold" },
-  para: { marginTop: 4, lineHeight: 1.25 },
+  page: {
+    paddingTop: 48,
+    paddingBottom: 48,
+    paddingHorizontal: 56,
+    fontSize: 11,
+    fontFamily: "Times-Roman",
+    lineHeight: 1.25,
+  },
+
+  title: { fontSize: 20, fontFamily: "Times-Bold", marginBottom: 10 },
+  meta: { fontSize: 12, marginBottom: 2 },
+  metaBold: { fontFamily: "Times-Bold" },
+
+  sectionTitle: { fontSize: 18, fontFamily: "Times-Bold", marginTop: 18, marginBottom: 10 },
+
+  table: { marginTop: 6, marginBottom: 6 },
+  trHead: { flexDirection: "row", marginBottom: 6 },
+  tr: { flexDirection: "row", marginBottom: 10 },
+
+  colKpi: { width: "44%" },
+  colPlan: { width: "14%", textAlign: "right" },
+  colReal: { width: "14%", textAlign: "right" },
+  colBrecha: { width: "14%", textAlign: "right" },
+  colCom: { width: "14%", textAlign: "left" },
+
+  th: { fontSize: 12, fontFamily: "Times-Bold" },
+  td: { fontSize: 12 },
+
+  bullets: { marginTop: 2, marginLeft: 18 },
+  bullet: { fontSize: 12, marginBottom: 4 },
+
+  para: { fontSize: 12, marginBottom: 6 },
 });
 
-export type OpsPdfInput = {
-  locale: "es" | "en";
-  clientFaenaLine: string;
-  periodLine: string;
-  zoneLine: string;
-  counterpartLine: string;
-  ownerLine: string;
-
-  m2Plan?: any;
-  m2Real?: any;
-  causasDesvio?: any;
-  detencionesHoras?: any;
-  detencionCausa?: any;
-  incidentesCasi?: any;
-  lesionesRegistrables?: any;
-  referenciaEventoHsec?: any;
-
-  recommendation?: string;
-};
-
-export function renderOpsPdf(props: OpsPdfInput): React.ReactElement<any> {
+export function buildOpsPdf(props: OpsPdfInput): React.ReactElement {
   const { locale } = props;
 
-  const m2PlanN = props.m2Plan === null || props.m2Plan === undefined ? null : Number(props.m2Plan);
-  const m2RealN = props.m2Real === null || props.m2Real === undefined ? null : Number(props.m2Real);
+  const m2PlanN = props.m2Plan === null || props.m2Plan === undefined ? null : Number(String(props.m2Plan).replace(",", "."));
+  const m2RealN = props.m2Real === null || props.m2Real === undefined ? null : Number(String(props.m2Real).replace(",", "."));
 
   const m2Brecha =
     Number.isFinite(m2PlanN as any) && Number.isFinite(m2RealN as any) ? (m2RealN as number) - (m2PlanN as number) : null;
@@ -109,133 +132,122 @@ export function renderOpsPdf(props: OpsPdfInput): React.ReactElement<any> {
 
   const cumplimientoBrecha = cumplimientoReal === null ? null : cumplimientoReal - 100;
 
-  const detH = props.detencionesHoras === null || props.detencionesHoras === undefined ? null : Number(props.detencionesHoras);
+  const detH = props.detencionesHoras === null || props.detencionesHoras === undefined ? null : Number(String(props.detencionesHoras).replace(",", "."));
   const continuidadPlan = 168;
   const continuidadReal = Number.isFinite(detH as any) ? continuidadPlan - (detH as number) : null;
   const continuidadBrecha = continuidadReal === null ? null : continuidadReal - continuidadPlan;
 
-  const incCasi = props.incidentesCasi === null || props.incidentesCasi === undefined ? null : Number(props.incidentesCasi);
-  const lesReg = props.lesionesRegistrables === null || props.lesionesRegistrables === undefined ? null : Number(props.lesionesRegistrables);
+  const incCasi = props.incidentesCasi === null || props.incidentesCasi === undefined ? null : Number(String(props.incidentesCasi).replace(",", "."));
+  const lesReg =
+    props.lesionesRegistrables === null || props.lesionesRegistrables === undefined ? null : Number(String(props.lesionesRegistrables).replace(",", "."));
   const incidenciasReal = (Number.isFinite(incCasi as any) ? (incCasi as number) : 0) + (Number.isFinite(lesReg as any) ? (lesReg as number) : 0);
 
   const causasTxt = mapList(locale, props.causasDesvio);
   const detCauseTxt = mapCode(locale, props.detencionCausa);
 
-  // 👇 CERO JSX: para evitar cualquier conflicto de tipos con Turbopack/TS
-  return React.createElement(
-    Document,
-    null,
-    React.createElement(
-      Page,
-      { size: "A4", style: styles.page },
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        <Text style={styles.title}>{t(locale, "Data Pack Operación (borrador)", "Ops Data Pack (draft)")}</Text>
 
-      React.createElement(Text, { style: styles.title }, t(locale, "Data Pack Operación (borrador)", "Ops Data Pack (draft)")),
+        <Text style={styles.meta}>
+          <Text style={styles.metaBold}>{t(locale, "Cliente/Faena: ", "Client/Site: ")}</Text>
+          {props.clientFaenaLine}
+        </Text>
+        <Text style={styles.meta}>
+          <Text style={styles.metaBold}>{t(locale, "Periodo: ", "Period: ")}</Text>
+          {props.periodLine}
+        </Text>
+        <Text style={styles.meta}>
+          <Text style={styles.metaBold}>{t(locale, "Zona/Caminos: ", "Zone/Roads: ")}</Text>
+          {props.zoneLine || "—"}
+        </Text>
+        <Text style={styles.meta}>
+          <Text style={styles.metaBold}>{t(locale, "Contraparte mandante: ", "Client counterpart: ")}</Text>
+          {props.counterpartLine || "—"}
+        </Text>
+        <Text style={styles.meta}>
+          <Text style={styles.metaBold}>{t(locale, "Responsable CASIA: ", "CASIA owner: ")}</Text>
+          {props.ownerLine || "—"}
+        </Text>
 
-      React.createElement(
-        Text,
-        { style: styles.meta },
-        React.createElement(Text, { style: styles.bold }, t(locale, "Cliente/Faena: ", "Client/Site: ")),
-        props.clientFaenaLine
-      ),
-      React.createElement(
-        Text,
-        { style: styles.meta },
-        React.createElement(Text, { style: styles.bold }, t(locale, "Periodo: ", "Period: ")),
-        props.periodLine
-      ),
-      React.createElement(
-        Text,
-        { style: styles.meta },
-        React.createElement(Text, { style: styles.bold }, t(locale, "Zona/Caminos: ", "Zone/Roads: ")),
-        props.zoneLine
-      ),
-      React.createElement(
-        Text,
-        { style: styles.meta },
-        React.createElement(Text, { style: styles.bold }, t(locale, "Contraparte mandante: ", "Client counterpart: ")),
-        props.counterpartLine
-      ),
-      React.createElement(
-        Text,
-        { style: styles.meta },
-        React.createElement(Text, { style: styles.bold }, t(locale, "Responsable CASIA: ", "CASIA owner: ")),
-        props.ownerLine
-      ),
+        <Text style={styles.sectionTitle}>{t(locale, "1) KPIs operativos (plan vs real)", "1) Operational KPIs (plan vs actual)")}</Text>
 
-      React.createElement(Text, { style: styles.h }, t(locale, "1) KPIs operativos (plan vs real)", "1) Operational KPIs (plan vs actual)")),
+        <View style={styles.table}>
+          <View style={styles.trHead}>
+            <Text style={[styles.th, styles.colKpi]}>{t(locale, "KPI", "KPI")}</Text>
+            <Text style={[styles.th, styles.colPlan]}>{t(locale, "Plan", "Plan")}</Text>
+            <Text style={[styles.th, styles.colReal]}>{t(locale, "Real", "Actual")}</Text>
+            <Text style={[styles.th, styles.colBrecha]}>{t(locale, "Brecha", "Gap")}</Text>
+            <Text style={[styles.th, styles.colCom]}>{t(locale, "Comentario", "Comment")}</Text>
+          </View>
 
-      React.createElement(
-        View,
-        { style: styles.table },
-        React.createElement(
-          View,
-          { style: [styles.tr, { paddingTop: 0 }] },
-          React.createElement(Text, { style: [styles.th, styles.c1] }, t(locale, "KPI", "KPI")),
-          React.createElement(Text, { style: [styles.th, styles.c2] }, t(locale, "Plan", "Plan")),
-          React.createElement(Text, { style: [styles.th, styles.c3] }, t(locale, "Real", "Actual")),
-          React.createElement(Text, { style: [styles.th, styles.c4] }, t(locale, "Brecha", "Gap")),
-          React.createElement(Text, { style: [styles.th, styles.c5] }, t(locale, "Comentario (causa)", "Comment (cause)"))
-        ),
+          <View style={styles.tr}>
+            <Text style={[styles.td, styles.colKpi]}>{t(locale, "m² tratados", "m² treated")}</Text>
+            <Text style={[styles.td, styles.colPlan]}>{fmtNum(props.m2Plan)}</Text>
+            <Text style={[styles.td, styles.colReal]}>{fmtNum(props.m2Real)}</Text>
+            <Text style={[styles.td, styles.colBrecha]}>{m2Brecha === null ? "—" : fmtNum(m2Brecha)}</Text>
+            <Text style={[styles.td, styles.colCom]}>{causasTxt}</Text>
+          </View>
 
-        React.createElement(
-          View,
-          { style: styles.tr },
-          React.createElement(Text, { style: styles.c1 }, t(locale, "m² tratados", "m² treated")),
-          React.createElement(Text, { style: styles.c2 }, fmtNum(props.m2Plan)),
-          React.createElement(Text, { style: styles.c3 }, fmtNum(props.m2Real)),
-          React.createElement(Text, { style: styles.c4 }, m2Brecha === null ? "—" : fmtNum(m2Brecha)),
-          React.createElement(Text, { style: styles.c5 }, causasTxt)
-        ),
+          <View style={styles.tr}>
+            <Text style={[styles.td, styles.colKpi]}>{t(locale, "Cumplimiento del plan", "Plan compliance")}</Text>
+            <Text style={[styles.td, styles.colPlan]}>100%</Text>
+            <Text style={[styles.td, styles.colReal]}>{cumplimientoReal === null ? "—" : `${cumplimientoReal.toFixed(0)}%`}</Text>
+            <Text style={[styles.td, styles.colBrecha]}>{cumplimientoBrecha === null ? "—" : `${cumplimientoBrecha.toFixed(0)} pp`}</Text>
+            <Text style={[styles.td, styles.colCom]}>{causasTxt}</Text>
+          </View>
 
-        React.createElement(
-          View,
-          { style: styles.tr },
-          React.createElement(Text, { style: styles.c1 }, t(locale, "Cumplimiento del plan", "Plan compliance")),
-          React.createElement(Text, { style: styles.c2 }, fmtPct(100, 0)),
-          React.createElement(Text, { style: styles.c3 }, cumplimientoReal === null ? "—" : fmtPct(cumplimientoReal, 0)),
-          React.createElement(Text, { style: styles.c4 }, cumplimientoBrecha === null ? "—" : `${cumplimientoBrecha.toFixed(0)} pp`),
-          React.createElement(Text, { style: styles.c5 }, causasTxt)
-        ),
+          <View style={styles.tr}>
+            <Text style={[styles.td, styles.colKpi]}>{t(locale, "Continuidad (hrs sin interrupción atribuible)", "Continuity (hrs without attributable stoppage)")}</Text>
+            <Text style={[styles.td, styles.colPlan]}>{fmtNum(continuidadPlan)}</Text>
+            <Text style={[styles.td, styles.colReal]}>{continuidadReal === null ? "—" : fmtNum(continuidadReal)}</Text>
+            <Text style={[styles.td, styles.colBrecha]}>{continuidadBrecha === null ? "—" : fmtNum(continuidadBrecha)}</Text>
+            <Text style={[styles.td, styles.colCom]}>
+              {detH ? `${t(locale, "Detenciones:", "Stoppage:")} ${fmtNum(detH)}h · ` : ""}
+              {detCauseTxt}
+            </Text>
+          </View>
 
-        React.createElement(
-          View,
-          { style: styles.tr },
-          React.createElement(Text, { style: styles.c1 }, t(locale, "Continuidad (hrs sin interrupción atribuible)", "Continuity (hrs without attributable stoppage)")),
-          React.createElement(Text, { style: styles.c2 }, fmtNum(continuidadPlan)),
-          React.createElement(Text, { style: styles.c3 }, continuidadReal === null ? "—" : fmtNum(continuidadReal)),
-          React.createElement(Text, { style: styles.c4 }, continuidadBrecha === null ? "—" : fmtNum(continuidadBrecha)),
-          React.createElement(Text, { style: styles.c5 }, detH ? `${t(locale, "Detenciones:", "Stoppage:")} ${fmtNum(detH)}h · ${detCauseTxt}` : "—")
-        ),
+          <View style={styles.tr}>
+            <Text style={[styles.td, styles.colKpi]}>{t(locale, "Incidencias (#)", "Incidents (#)")}</Text>
+            <Text style={[styles.td, styles.colPlan]}>—</Text>
+            <Text style={[styles.td, styles.colReal]}>{Number.isFinite(incidenciasReal as any) ? fmtNum(incidenciasReal) : "—"}</Text>
+            <Text style={[styles.td, styles.colBrecha]}>—</Text>
+            <Text style={[styles.td, styles.colCom]}>{props.referenciaEventoHsec ? String(props.referenciaEventoHsec) : "—"}</Text>
+          </View>
+        </View>
 
-        React.createElement(
-          View,
-          { style: styles.tr },
-          React.createElement(Text, { style: styles.c1 }, t(locale, "Incidencias (#)", "Incidents (#)")),
-          React.createElement(Text, { style: styles.c2 }, "—"),
-          React.createElement(Text, { style: styles.c3 }, Number.isFinite(incidenciasReal as any) ? fmtNum(incidenciasReal) : "—"),
-          React.createElement(Text, { style: styles.c4 }, "—"),
-          React.createElement(Text, { style: styles.c5 }, props.referenciaEventoHsec ? String(props.referenciaEventoHsec) : "—")
-        )
-      ),
+        <Text style={styles.sectionTitle}>{t(locale, "2) Eventos relevantes (qué movió la aguja)", "2) Relevant events (what moved the needle)")}</Text>
+        <View style={styles.bullets}>
+          <Text style={styles.bullet}>• {t(locale, "Desvíos:", "Deviations:")} {causasTxt}</Text>
+          <Text style={styles.bullet}>• {t(locale, "Detenciones:", "Stoppages:")} {detH ? `${fmtNum(detH)}h · ${detCauseTxt}` : "—"}</Text>
+          <Text style={styles.bullet}>• {t(locale, "HSEC:", "HSEC:")} {props.referenciaEventoHsec ? String(props.referenciaEventoHsec) : "—"}</Text>
+        </View>
 
-      React.createElement(Text, { style: styles.h }, t(locale, "2) Eventos relevantes (qué movió la aguja)", "2) Relevant events (what moved the needle)")),
-      React.createElement(Text, { style: styles.bullet }, `• ${t(locale, "Desvíos:", "Deviations:")} ${causasTxt}`),
-      React.createElement(Text, { style: styles.bullet }, `• ${t(locale, "Detenciones:", "Stoppages:")} ${detH ? `${fmtNum(detH)}h · ${detCauseTxt}` : "—"}`),
-      React.createElement(Text, { style: styles.bullet }, `• ${t(locale, "HSEC:", "HSEC:")} ${props.referenciaEventoHsec ? String(props.referenciaEventoHsec) : "—"}`),
+        <Text style={styles.sectionTitle}>{t(locale, "3) Incidencias y acciones correctivas", "3) Incidents and corrective actions")}</Text>
+        <Text style={styles.para}>
+          {t(
+            locale,
+            "MVP: este apartado referencia señales del reporte semanal (HSEC/Calidad). La versión siguiente se completa con incidencias estructuradas.",
+            "MVP: this section references signals from the weekly report (HSEC/Quality). Next version will be completed with structured incident logs."
+          )}
+        </Text>
 
-      React.createElement(Text, { style: styles.h }, t(locale, "3) Incidencias y acciones correctivas", "3) Incidents and corrective actions")),
-      React.createElement(
-        Text,
-        { style: styles.para },
-        t(
-          locale,
-          "Este apartado se completa con el registro estructurado de incidencias (siguiente iteración). En MVP se referencia a HSEC/Calidad desde el reporte semanal.",
-          "This section will be completed from structured incident logs (next iteration). In MVP it references HSEC/Quality from the weekly report."
-        )
-      ),
-
-      React.createElement(Text, { style: styles.h }, t(locale, "4) Recomendación operativa concreta (próximo ajuste)", "4) Concrete operational recommendation (next adjustment)")),
-      React.createElement(Text, { style: styles.para }, props.recommendation?.trim() ? props.recommendation.trim() : "—")
-    )
+        <Text style={styles.sectionTitle}>{t(locale, "4) Recomendación operativa concreta (próximo ajuste)", "4) Concrete operational recommendation (next adjustment)")}</Text>
+        <Text style={styles.para}>
+          <Text style={styles.metaBold}>{t(locale, "Ajuste propuesto: ", "Proposed adjustment: ")}</Text>
+          {props.ajustePropuesto?.trim() ? props.ajustePropuesto.trim() : "—"}
+        </Text>
+        <Text style={styles.para}>
+          <Text style={styles.metaBold}>{t(locale, "Por qué: ", "Why: ")}</Text>
+          {props.porQue?.trim() ? props.porQue.trim() : "—"}
+        </Text>
+        <Text style={styles.para}>
+          <Text style={styles.metaBold}>{t(locale, "Qué necesito del mandante: ", "What I need from the client: ")}</Text>
+          {props.queNecesitoDelMandante?.trim() ? props.queNecesitoDelMandante.trim() : "—"}
+        </Text>
+      </Page>
+    </Document>
   );
 }

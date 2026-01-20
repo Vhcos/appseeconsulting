@@ -1,3 +1,4 @@
+// app/api/export/weekly-report/pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import React from "react";
 import { pdf, Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";

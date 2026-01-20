@@ -1,3 +1,4 @@
+// app/[locale]/api/export/weekly-report/pdf/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
 // Wrapper: redirige a la ruta sin locale (si la tienes en app/api/...)
