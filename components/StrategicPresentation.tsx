@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef } from "react";
+import Image from "next/image";
 import Reveal from "reveal.js";
 import "reveal.js/dist/reveal.css";
 // Usamos un tema base nulo para controlar todo con Tailwind
@@ -403,6 +404,33 @@ export default function StrategicPresentation() {
               />
             </div>
           </section>
+{/* 5) CARTA GANTT (2026) */}
+<section>
+  <div className="px-10 py-10 h-full flex flex-col">
+    <SlideHeader
+      kicker="Roadmap 2026"
+      title="Carta Gantt (Hitos 2026)"
+      subtitle="Visual de hitos por mes, basado en el roadmap oficial."
+    />
+
+    <div className="flex-1 flex items-center justify-center">
+      <div className="w-full max-w-6xl rounded-xl overflow-hidden border border-white/10 bg-black/20 shadow-2xl">
+        <Image
+          src="/Roadmap_Casia_2026_Visual_REAL_V4.png"
+          alt="Roadmap Estratégico CASIA 2026 (Carta Gantt)"
+          width={1600}
+          height={900}
+          className="w-full h-auto"
+          priority
+        />
+      </div>
+    </div>
+
+    <div className="mt-4 text-xs text-slate-500">
+      Fuente: Roadmap_Casia_2026_Visual_REAL_V4.png
+    </div>
+  </div>
+</section>
 
           {/* 5) CARGA DE TRABAJO */}
           <section>
