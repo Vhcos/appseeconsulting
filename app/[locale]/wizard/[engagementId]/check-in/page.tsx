@@ -116,7 +116,7 @@ export default async function CheckInPage({
     orderBy: [{ id: "desc" }],
   });
 
-  // ---------- Status computations (baja fricción) ----------
+  // ---------- Status computations ----------
   const allKpis = await prisma.kpi.findMany({
     where: { engagementId },
     select: { id: true },
@@ -138,26 +138,34 @@ export default async function CheckInPage({
 
   const [progInit, progSummary, progOps, progExec] = await Promise.all([
     prisma.wizardProgress.findUnique({
-  where: { engagementId_stepKey: { engagementId, stepKey: stepKeyInitiatives(periodKey, scopeKey) } },
-  select: { id: true },
-}),
-
-    prisma.wizardProgress.findUnique({ where: { engagementId_stepKey: { engagementId, stepKey: stepKeySummary(periodKey, scopeKey) } }
-, select: { id: true } }),
-    prisma.wizardProgress.findUnique({ where: { engagementId_stepKey: { engagementId, stepKey: stepKeyOps(periodKey, scopeKey) } }
-, select: { id: true } }),
-    prisma.wizardProgress.findUnique({where: { engagementId_stepKey: { engagementId, stepKey: stepKeyExec(periodKey, scopeKey) } }
-, select: { id: true } }),
+      where: { engagementId_stepKey: { engagementId, stepKey: stepKeyInitiatives(periodKey, scopeKey) } },
+      select: { id: true },
+    }),
+    prisma.wizardProgress.findUnique({
+      where: { engagementId_stepKey: { engagementId, stepKey: stepKeySummary(periodKey, scopeKey) } },
+      select: { id: true },
+    }),
+    prisma.wizardProgress.findUnique({
+      where: { engagementId_stepKey: { engagementId, stepKey: stepKeyOps(periodKey, scopeKey) } },
+      select: { id: true },
+    }),
+    prisma.wizardProgress.findUnique({
+      where: { engagementId_stepKey: { engagementId, stepKey: stepKeyExec(periodKey, scopeKey) } },
+      select: { id: true },
+    }),
   ]);
+
+  const contactsCount = await prisma.npsContact.count({ where: { engagementId } });
 
   const kpisStatus: Status =
     totalKpis === 0 ? "PENDING" : filledKpis === 0 ? "PENDING" : filledKpis < totalKpis ? "IN_PROGRESS" : "DONE";
 
   const initsStatus: Status = progInit ? "DONE" : "PENDING";
   const summaryStatus: Status = progSummary ? "DONE" : "PENDING";
-
   const dataPackStatus: Status =
     progOps && progExec ? "DONE" : progOps || progExec ? "IN_PROGRESS" : "PENDING";
+
+  const npsStatus: Status = contactsCount > 0 ? "IN_PROGRESS" : "PENDING";
 
   // ---------- Links ----------
   const qs = new URLSearchParams();
@@ -169,14 +177,7 @@ export default async function CheckInPage({
   const initsHref = `/${locale}/wizard/${engagementId}/check-in/initiatives?${baseQs}`;
   const summaryHref = `/${locale}/wizard/${engagementId}/check-in/summary?${baseQs}`;
   const dataPackHref = `/${locale}/wizard/${engagementId}/check-in/data-pack?${baseQs}`;
-  // Informe (web) + PDF
-  const reportHref = `/${locale}/wizard/${engagementId}/report?${baseQs}`;
-
-  // IMPORTANT: API routes NO llevan /{locale}
-  const pdfHref = `/api/export/summary/pdf?locale=${encodeURIComponent(locale)}&engagementId=${encodeURIComponent(
-   engagementId
-  )}&period=${encodeURIComponent(periodKey)}${activeAccountId ? `&accountId=${encodeURIComponent(activeAccountId)}` : ""}`;
-
+  const npsHref = `/${locale}/wizard/${engagementId}/check-in/nps?${baseQs}`;
 
   // CTA “continuar donde quedaste”
   const next =
@@ -186,7 +187,9 @@ export default async function CheckInPage({
         ? { href: initsHref, label: t(locale, "Continuar con Iniciativas →", "Continue with Initiatives →") }
         : summaryStatus !== "DONE"
           ? { href: summaryHref, label: t(locale, "Continuar con Resumen →", "Continue with Summary →") }
-          : { href: dataPackHref, label: t(locale, "Ir a Data Pack →", "Go to Data Pack →") };
+          : dataPackStatus !== "DONE"
+            ? { href: dataPackHref, label: t(locale, "Ir a Data Pack →", "Go to Data Pack →") }
+            : { href: npsHref, label: t(locale, "Ir a NPS →", "Go to NPS →") };
 
   const unitLabel = activeAccountId ? t(locale, "Unidad", "Unit") : "GLOBAL";
 
@@ -205,30 +208,31 @@ export default async function CheckInPage({
             <p className="mt-1 text-xs text-slate-600">
               {t(locale, "Meta:", "Goal:")}{" "}
               <span className="font-semibold">
-                {t(locale, "cerrar el mes en 5 pasos .", "close the month in 5 steps ")}
+                {t(locale, "cerrar el período en 5 pasos.", "close the period in 5 steps.")}
               </span>
             </p>
 
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
               <div className="font-semibold text-slate-900">{t(locale, "Checklist rápido", "Quick checklist")}</div>
               <ol className="mt-1 list-decimal pl-5 space-y-1">
-                <li>{t(locale, "KPIs: Seguimiento mensual.", "KPIs: values + notes (minimum viable).")}</li>
+                <li>{t(locale, "KPIs: Seguimiento del período.", "KPIs: values + notes (minimum viable).")}</li>
                 <li>{t(locale, "Iniciativas: Seguimiento + progreso + bloqueos.", "Initiatives: progress + blockers + evidence.")}</li>
                 <li>{t(locale, "Resumen: Avances y control.", "Summary: 1–2 lines + risks + next steps.")}</li>
                 <li>{t(locale, "Data Pack: Informe para Dirección/Operación.", "Data Pack: polished output for Exec/Ops.")}</li>
-                <li>{t(locale, "Reporte Semanal: Por unidad operativa.", "Data Pack: polished output for Exec/Ops.")}</li>
+                <li>{t(locale, "NPS: Encuesta semestral (global y por unidad).", "NPS: semiannual survey (global and per unit).")}</li>
               </ol>
             </div>
           </div>
 
-         <div className="flex flex-wrap items-center gap-2">
-          <Link
-             href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
-             className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-all active:scale-[0.98]"
-           >
-             {t(locale, "Reporte Semanal", "Report Weekly")}
-          </Link>
-         </div></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
+              className="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-all active:scale-[0.98]"
+            >
+              {t(locale, "Reporte Semanal", "Report Weekly")}
+            </Link>
+          </div>
+        </div>
 
         <div className="mt-4">
           <CheckInNav locale={locale} engagementId={engagementId} />
@@ -289,7 +293,7 @@ export default async function CheckInPage({
           </div>
         </form>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-4">
+        <div className="mt-6 grid gap-3 md:grid-cols-5">
           {/* KPIs */}
           <Link href={kpisHref} className={actionCardBase()}>
             <div className="flex items-start justify-between gap-3">
@@ -378,23 +382,45 @@ export default async function CheckInPage({
               {t(locale, "Abrir →", "Open →")}
             </div>
           </Link>
-<Link
-  href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
-  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50"
->
-  <div className="flex items-start justify-between gap-3">
-    <div>
-      <div className="text-sm font-semibold text-slate-900">Reporte semanal</div>
-      <div className="mt-1 text-xs text-slate-600">
-        Reporte semanal por faena. para ser llenado por cada responsable de la unidad Link sin login.
-      </div>
-    </div>
-    <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
-      Nuevo
-    </span>
-  </div>
-  <div className="mt-3 text-xs font-medium text-indigo-700">Abrir →</div>
-</Link>
+
+          {/* NPS */}
+          <Link href={npsHref} className={actionCardBase()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">{t(locale, "5) NPS", "5) NPS")}</div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {t(locale, "Contactos + envío email + reporte semestral.", "Contacts + email send + semiannual reporting.")}
+                </div>
+              </div>
+              <span className={pill(statusMeta(locale, npsStatus).cls)}>{statusMeta(locale, npsStatus).txt}</span>
+            </div>
+
+            <div className="mt-3 text-[11px] text-slate-600">
+              {t(locale, "Contactos:", "Contacts:")} <span className="font-semibold">{contactsCount}</span>
+            </div>
+
+            <div className="mt-3 text-[11px] font-semibold text-indigo-600 group-hover:text-indigo-500">
+              {t(locale, "Abrir →", "Open →")}
+            </div>
+          </Link>
+
+          <Link
+            href={`/${locale}/wizard/${engagementId}/check-in/faena-semanal`}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:bg-slate-50 md:col-span-2"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Reporte semanal</div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Reporte semanal por faena. Para ser llenado por cada responsable de la unidad. Link sin login.
+                </div>
+              </div>
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                Nuevo
+              </span>
+            </div>
+            <div className="mt-3 text-xs font-medium text-indigo-700">Abrir →</div>
+          </Link>
         </div>
       </section>
     </main>

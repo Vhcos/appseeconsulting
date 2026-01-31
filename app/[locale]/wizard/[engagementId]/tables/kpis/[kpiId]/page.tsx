@@ -63,12 +63,14 @@ function perspectiveLabel(locale: string, p: BscPerspective) {
 
 function freqLabel(locale: string, f: KpiFrequency) {
   const map: Record<KpiFrequency, { es: string; en: string }> = {
-    WEEKLY: { es: "Semanal", en: "Weekly" },
-    MONTHLY: { es: "Mensual", en: "Monthly" },
-    QUARTERLY: { es: "Trimestral", en: "Quarterly" },
-    YEARLY: { es: "Anual", en: "Yearly" },
-    ADHOC: { es: "A demanda", en: "Ad-hoc" },
-  };
+  WEEKLY: { es: "Semanal", en: "Weekly" },
+  MONTHLY: { es: "Mensual", en: "Monthly" },
+  QUARTERLY: { es: "Trimestral", en: "Quarterly" },
+  SEMIANNUAL: { es: "Semestral", en: "Semiannual" },
+  YEARLY: { es: "Anual", en: "Yearly" },
+  ADHOC: { es: "Ad hoc", en: "Ad hoc" },
+};
+
   return t(locale, map[f].es, map[f].en);
 }
 

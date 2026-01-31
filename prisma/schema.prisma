@@ -37,6 +37,7 @@ enum KpiFrequency {
   WEEKLY
   MONTHLY
   QUARTERLY
+  SEMIANNUAL
   YEARLY
   ADHOC
 }
@@ -65,6 +66,7 @@ enum QuestionType {
   SINGLE_SELECT
   MULTI_SELECT
   SCALE_1_5
+  SCALE_0_10
 }
 
 enum ReportLocale {
@@ -201,6 +203,8 @@ model Faena {
   engagement    Engagement               @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   weeklyReports WeeklyFaenaReport[]
   weeklyTokens  WeeklyFaenaReportToken[]
+
+  npsInvites NpsInvite[] // 👈 nuevo (segmentación)
 
   @@index([engagementId])
 }
@@ -448,6 +452,11 @@ model Engagement {
   weeklyFaenaReportTokens WeeklyFaenaReportToken[]
   weeklyFaenaReports      WeeklyFaenaReport[]
 
+  npsRoles    NpsRole[]
+  npsContacts NpsContact[]
+
+  npsInvites  NpsInvite[] // 👈 nuevo (relación directa si engagementId no es null)
+
   @@index([orgId])
   @@index([companyId])
 }
@@ -502,6 +511,8 @@ model QuestionSet {
   engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
   questions  Question[]
 
+  npsInvites NpsInvite[] // 👈 nuevo (encuesta completa por token)
+
   @@index([engagementId])
 }
 
@@ -536,6 +547,10 @@ model Answer {
   questionId       String
   respondentUserId String?
 
+  // 👇 nuevo: vínculo al token/invite de NPS
+  npsInviteId String?
+  npsInvite   NpsInvite? @relation(fields: [npsInviteId], references: [id], onDelete: Cascade)
+
   valueJson Json
   note      String?
 
@@ -550,6 +565,8 @@ model Answer {
 
   @@index([engagementId])
   @@index([questionId])
+  @@index([npsInviteId])
+  @@unique([npsInviteId, questionId])
 }
 
 model Evidence {
@@ -831,14 +848,16 @@ model AccountPlanRow {
   agenda8w          String?
   nextStep          String?
   status            String?
-  // Relaciones “Unidad” (faena/obra/centro de costo) → cosas asignables
+
   initiatives       Initiative[]
   roadmapWeeks      RoadmapWeek[]
   unitEconomicsRows UnitEconomicsRow[]
   kpiValues         KpiValue[]
 
-  engagement Engagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  engagement  Engagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  npsContacts NpsContact[]
 
+  npsInvites NpsInvite[] // 👈 nuevo (segmentación)
   @@index([engagementId])
 }
 
@@ -1008,7 +1027,6 @@ model DataRoomItem {
   @@index([area])
 }
 
-
 model DataRoomFile {
   id           String  @id @default(cuid())
   engagementId String
@@ -1025,4 +1043,148 @@ model DataRoomFile {
 
   @@index([engagementId])
   @@index([itemId])
+}
+
+model NpsRole {
+  id           String @id @default(cuid())
+  engagementId String
+
+  code String
+  name String
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  engagement Engagement   @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  contacts   NpsContact[]
+
+  @@unique([engagementId, code])
+  @@index([engagementId])
+}
+
+model NpsContact {
+  id           String @id @default(cuid())
+  engagementId String
+
+  fullName String
+  email    String
+  company  String?
+  phone    String?
+  title    String?
+
+  roleId String?
+  unitId String? // AccountPlanRow.id (unidad/faena/contrato)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  engagement Engagement      @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  role       NpsRole?        @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  unit       AccountPlanRow? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  @@unique([engagementId, email])
+  @@index([engagementId])
+  @@index([unitId])
+  @@index([roleId])
+}
+
+////////////////////////////////////////////////////////////
+// NPS (Encuesta semestral) — v1 (SE MANTIENE)
+////////////////////////////////////////////////////////////
+
+enum NpsInviteStatus {
+  DRAFT
+  SENT
+  DELIVERED
+  BOUNCED
+  OPENED
+  RESPONDED
+  CANCELED
+}
+
+enum NpsReason {
+  CONTROL_OPERATIVO
+  PERFORMANCE_CAMINOS
+  DATA_REPORTABILIDAD
+  SEGURIDAD_HSEC
+  RESPUESTA_EQUIPO
+  OTRO
+}
+
+enum NpsFocus {
+  MAYOR_PRESENCIA_EN_TERRENO
+  MEJOR_TECNOLOGIA_INNOVACION
+  MAS_DATOS_INSIGHTS
+  GESTION_ADMINISTRATIVA
+  MANTENER_ESTANDAR
+}
+
+model NpsInvite {
+  id          String          @id @default(cuid())
+
+  // Metadata opcional (por si luego lo amarras a org/cliente/engagement)
+  orgId        String?
+  companyId    String?
+  engagementId String?
+
+  // 👇 nuevo: set de preguntas para "encuesta completa"
+  questionSetId String?
+  questionSet   QuestionSet? @relation(fields: [questionSetId], references: [id], onDelete: SetNull)
+
+  // 👇 nuevo: segmentación opcional
+  faenaId String?
+  faena   Faena? @relation(fields: [faenaId], references: [id], onDelete: SetNull)
+
+  unitId String? // AccountPlanRow.id
+  unit   AccountPlanRow? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+
+  semesterKey String
+  email       String
+  fullName    String?
+  token       String          @unique
+  inviteUrl   String?
+
+  status      NpsInviteStatus @default(SENT)
+  sentAt      DateTime        @default(now())
+  openedAt    DateTime?
+  respondedAt DateTime?
+
+  expiresAt   DateTime?
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  responses NpsResponse[]
+  answers   Answer[]        // 👈 nuevo: respuestas "completas" vía Answer.npsInviteId
+
+  engagement Engagement? @relation(fields: [engagementId], references: [id], onDelete: SetNull)
+
+  @@index([semesterKey])
+  @@index([email])
+  @@index([engagementId])
+  @@index([questionSetId])
+  @@index([faenaId])
+  @@index([unitId])
+}
+
+model NpsResponse {
+  id          String     @id @default(cuid())
+
+  inviteId    String     @unique
+  invite      NpsInvite  @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+
+  score       Int
+  reason      NpsReason?
+  focus       NpsFocus?
+  comment     String?
+
+  submittedAt DateTime   @default(now())
+  ipHash      String?
+  userAgent   String?
+
+  @@index([submittedAt])
 }

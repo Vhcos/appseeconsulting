@@ -1,3 +1,4 @@
+// components/see/CheckInNav.tsx
 "use client";
 
 import Link from "next/link";
@@ -66,6 +67,7 @@ export default function CheckInNav({
   const isInits = pathname.startsWith(`${base}/initiatives`);
   const isSummary = pathname.startsWith(`${base}/summary`);
   const isDataPack = pathname.startsWith(`${base}/data-pack`);
+  const isNps = pathname.startsWith(`${base}/nps`);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -87,6 +89,10 @@ export default function CheckInNav({
 
       <Link href={withQs(`${base}/data-pack`)} className={isDataPack ? pillActiveDark() : pillIdle()}>
         {t(locale, "Data Pack", "Data Pack")}
+      </Link>
+
+      <Link href={withQs(`${base}/nps`)} className={isNps ? pillActiveDark() : pillIdle()}>
+        {t(locale, "5) NPS", "5) NPS")}
       </Link>
     </div>
   );
